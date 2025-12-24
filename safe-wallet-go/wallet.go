@@ -49,14 +49,37 @@ func (ws *WalletService) GetWallet() *Wallet {
 }
 
 // AddGroup adds a group at the specified path
-func (ws *WalletService) AddGroup(path Path, group Group) error {
+func (ws *WalletService) AddGroup(path Path, group *Group) error {
 	if ws.wallet == nil {
 		return errors.New("wallet not loaded")
 	}
 
+	// Auto-generate ID if not provided or empty
+	if group.ID == "" {
+		group.ID = generateGroupID()
+	} else {
+		// Check if ID already exists
+		if checkGroupIDExists(ws.wallet, group.ID) {
+			return errors.New("group ID already exists")
+		}
+	}
+
+	// Check if group name already exists
+	if checkGroupNameExists(ws.wallet, group.Name, "") {
+		return errors.New("group name already exists")
+	}
+
+	// Initialize empty slices if nil
+	if group.Groups == nil {
+		group.Groups = []Group{}
+	}
+	if group.Entries == nil {
+		group.Entries = []Entry{}
+	}
+
 	// If path is empty, add to root
 	if len(path.GroupIDs) == 0 {
-		ws.wallet.Groups = append(ws.wallet.Groups, group)
+		ws.wallet.Groups = append(ws.wallet.Groups, *group)
 		return nil
 	}
 
@@ -66,12 +89,12 @@ func (ws *WalletService) AddGroup(path Path, group Group) error {
 		return err
 	}
 
-	parentGroup.Groups = append(parentGroup.Groups, group)
+	parentGroup.Groups = append(parentGroup.Groups, *group)
 	return nil
 }
 
 // AddEntry adds an entry to the group at the specified path
-func (ws *WalletService) AddEntry(path Path, entry Entry) error {
+func (ws *WalletService) AddEntry(path Path, entry *Entry) error {
 	if ws.wallet == nil {
 		return errors.New("wallet not loaded")
 	}
@@ -80,12 +103,27 @@ func (ws *WalletService) AddEntry(path Path, entry Entry) error {
 		return errors.New("path should point to a group, not an entry")
 	}
 
+	// Auto-generate ID if not provided or empty
+	if entry.ID == "" {
+		entry.ID = generateEntryID()
+	} else {
+		// Check if ID already exists
+		if checkEntryIDExists(ws.wallet, entry.ID) {
+			return errors.New("entry ID already exists")
+		}
+	}
+
+	// Check if entry title already exists
+	if checkEntryTitleExists(ws.wallet, entry.Title, "") {
+		return errors.New("entry title already exists")
+	}
+
 	group, err := FindGroupByPath(ws.wallet, path)
 	if err != nil {
 		return err
 	}
 
-	group.Entries = append(group.Entries, entry)
+	group.Entries = append(group.Entries, *entry)
 	return nil
 }
 
@@ -99,12 +137,19 @@ func (ws *WalletService) UpdateGroup(path Path, updatedGroup Group) error {
 		return errors.New("cannot update root groups directly")
 	}
 
+	targetID := path.GroupIDs[len(path.GroupIDs)-1]
+
+	// Check if the new name conflicts with another group (excluding the current one)
+	if checkGroupNameExists(ws.wallet, updatedGroup.Name, targetID) {
+		return errors.New("group name already exists")
+	}
+
 	// Get parent path
 	parentPath := GetParentPath(path)
 	if len(parentPath.GroupIDs) == 0 {
 		// Update root-level group
 		for i := range ws.wallet.Groups {
-			if ws.wallet.Groups[i].ID == path.GroupIDs[len(path.GroupIDs)-1] {
+			if ws.wallet.Groups[i].ID == targetID {
 				updatedGroup.ID = ws.wallet.Groups[i].ID
 				updatedGroup.Groups = ws.wallet.Groups[i].Groups
 				updatedGroup.Entries = ws.wallet.Groups[i].Entries
@@ -120,7 +165,6 @@ func (ws *WalletService) UpdateGroup(path Path, updatedGroup Group) error {
 		return err
 	}
 
-	targetID := path.GroupIDs[len(path.GroupIDs)-1]
 	for i := range parentGroup.Groups {
 		if parentGroup.Groups[i].ID == targetID {
 			updatedGroup.ID = parentGroup.Groups[i].ID
@@ -147,6 +191,11 @@ func (ws *WalletService) UpdateEntry(path Path, updatedEntry Entry) error {
 	entry, err := FindEntryByPath(ws.wallet, path)
 	if err != nil {
 		return err
+	}
+
+	// Check if the new title conflicts with another entry (excluding the current one)
+	if checkEntryTitleExists(ws.wallet, updatedEntry.Title, path.EntryID) {
+		return errors.New("entry title already exists")
 	}
 
 	updatedEntry.ID = entry.ID
