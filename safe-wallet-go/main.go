@@ -93,18 +93,20 @@ func main() {
 			currentPath = handleTraverseBackward(service, currentPath)
 		case "11", "s", "search":
 			handleSearchEntry(service, scanner)
-		case "12", "n", "navigate":
+		case "12", "t", "tree":
+			handleDisplayTree(service, currentPath)
+		case "13", "n", "navigate":
 			currentPath = handleNavigateIntoGroup(service, currentPath, scanner)
-		case "13", "r", "root":
+		case "14", "r", "root":
 			currentPath = Path{GroupIDs: []string{}}
 			fmt.Println("Returned to root")
-		case "14", "save":
+		case "15", "save":
 			if err := service.Save(); err != nil {
 				fmt.Printf("Error saving wallet: %v\n", err)
 			} else {
 				fmt.Println("Wallet saved successfully!")
 			}
-		case "15", "q", "quit", "exit":
+		case "16", "q", "quit", "exit":
 			// Auto-save before exit
 			if err := service.Save(); err != nil {
 				fmt.Printf("Error saving wallet: %v\n", err)
@@ -152,10 +154,11 @@ func displayMenu() {
 	fmt.Println("  8 (f)   - Traverse Forward (groups one level down)")
 	fmt.Println("  9 (b)   - Traverse Backward (go up one level)")
 	fmt.Println("  10 (s)  - Search Entry by Title")
-	fmt.Println("  11 (n)  - Navigate into Group")
-	fmt.Println("  12 (r)  - Return to Root")
-	fmt.Println("  13      - Save Wallet")
-	fmt.Println("  14 (q)  - Quit")
+	fmt.Println("  11 (t)  - Display Tree (show full hierarchy)")
+	fmt.Println("  12 (n)  - Navigate into Group")
+	fmt.Println("  13 (r)  - Return to Root")
+	fmt.Println("  14      - Save Wallet")
+	fmt.Println("  15 (q)  - Quit")
 }
 
 func handleCreateGroup(service *WalletService, path Path, scanner *bufio.Scanner) {
@@ -279,7 +282,14 @@ func handleList(service *WalletService, path Path) {
 		fmt.Println("\nEntries:")
 		for i, entry := range entries {
 			fmt.Printf("  %d. %s (ID: %s)\n", i+1, entry.Title, entry.ID)
-			fmt.Printf("     Username: %s, URL: %s\n", entry.Username, entry.URL)
+			fmt.Printf("     Username: %s\n", entry.Username)
+			fmt.Printf("     Password: %s\n", entry.Password)
+			if entry.URL != "" {
+				fmt.Printf("     URL: %s\n", entry.URL)
+			}
+			if entry.Notes != "" {
+				fmt.Printf("     Notes: %s\n", entry.Notes)
+			}
 		}
 	} else {
 		if len(path.GroupIDs) > 0 {
@@ -348,7 +358,14 @@ func handleUpdateEntry(service *WalletService, path Path, scanner *bufio.Scanner
 	fmt.Println("\nEntries:")
 	for i, entry := range group.Entries {
 		fmt.Printf("  %d. %s (ID: %s)\n", i+1, entry.Title, entry.ID)
-		fmt.Printf("     Username: %s, URL: %s\n", entry.Username, entry.URL)
+		fmt.Printf("     Username: %s\n", entry.Username)
+		fmt.Printf("     Password: %s\n", entry.Password)
+		if entry.URL != "" {
+			fmt.Printf("     URL: %s\n", entry.URL)
+		}
+		if entry.Notes != "" {
+			fmt.Printf("     Notes: %s\n", entry.Notes)
+		}
 	}
 	fmt.Print("\nEnter entry number to update: ")
 	if !scanner.Scan() {
@@ -534,7 +551,14 @@ func handleDeleteEntry(service *WalletService, path Path, scanner *bufio.Scanner
 	fmt.Println("\nEntries:")
 	for i, entry := range group.Entries {
 		fmt.Printf("  %d. %s (ID: %s)\n", i+1, entry.Title, entry.ID)
-		fmt.Printf("     Username: %s, URL: %s\n", entry.Username, entry.URL)
+		fmt.Printf("     Username: %s\n", entry.Username)
+		fmt.Printf("     Password: %s\n", entry.Password)
+		if entry.URL != "" {
+			fmt.Printf("     URL: %s\n", entry.URL)
+		}
+		if entry.Notes != "" {
+			fmt.Printf("     Notes: %s\n", entry.Notes)
+		}
 	}
 	fmt.Print("\nEnter entry number to delete: ")
 	if !scanner.Scan() {
@@ -689,9 +713,149 @@ func handleSearchEntry(service *WalletService, scanner *bufio.Scanner) {
 	fmt.Printf("\nFound %d entry/entries:\n", len(foundEntries))
 	for i, info := range foundEntries {
 		fmt.Printf("  %d. %s (ID: %s)\n", i+1, info.Entry.Title, info.Entry.ID)
-		fmt.Printf("     Username: %s, URL: %s\n", info.Entry.Username, info.Entry.URL)
+		fmt.Printf("     Username: %s\n", info.Entry.Username)
+		fmt.Printf("     Password: %s\n", info.Entry.Password)
+		if info.Entry.URL != "" {
+			fmt.Printf("     URL: %s\n", info.Entry.URL)
+		}
+		if info.Entry.Notes != "" {
+			fmt.Printf("     Notes: %s\n", info.Entry.Notes)
+		}
 		fmt.Printf("     Path: %v\n", info.Path.GroupIDs)
 	}
+}
+
+func handleDisplayTree(service *WalletService, currentPath Path) {
+	wallet := service.GetWallet()
+	if wallet == nil {
+		fmt.Println("Wallet not loaded")
+		return
+	}
+
+	fmt.Println("\n" + strings.Repeat("=", 60))
+	fmt.Println("WALLET TREE STRUCTURE")
+	fmt.Println(strings.Repeat("=", 60))
+	fmt.Println("(Current location marked with >>>)")
+	fmt.Println()
+
+	var displayTree func(groups []Group, path Path, depth int, prefix string, isLast bool)
+	displayTree = func(groups []Group, path Path, depth int, prefix string, isLast bool) {
+		for i, group := range groups {
+			isLastGroup := i == len(groups)-1
+			currentPrefix := prefix
+			if depth > 0 {
+				if isLast {
+					currentPrefix += "    "
+				} else {
+					currentPrefix += "│   "
+				}
+			}
+
+			// Check if this is the current location
+			groupPath := Path{GroupIDs: append([]string{}, path.GroupIDs...)}
+			groupPath.GroupIDs = append(groupPath.GroupIDs, group.ID)
+			isCurrent := len(currentPath.GroupIDs) == len(groupPath.GroupIDs)
+			if isCurrent {
+				for j := 0; j < len(groupPath.GroupIDs); j++ {
+					if j >= len(currentPath.GroupIDs) || groupPath.GroupIDs[j] != currentPath.GroupIDs[j] {
+						isCurrent = false
+						break
+					}
+				}
+			}
+
+			// Display group
+			connector := "├── "
+			if isLastGroup {
+				connector = "└── "
+			}
+
+			marker := ""
+			if isCurrent {
+				marker = " >>> [CURRENT]"
+			}
+
+			fmt.Printf("%s%s%s%s%s\n", prefix, connector, group.Name, marker, fmt.Sprintf(" (%d subgroups, %d entries)", len(group.Groups), len(group.Entries)))
+
+			// Display entries in this group
+			newPrefix := prefix
+			if depth > 0 {
+				if isLast {
+					newPrefix += "    "
+				} else {
+					newPrefix += "│   "
+				}
+			}
+			if isLastGroup {
+				newPrefix += "    "
+			} else {
+				newPrefix += "│   "
+			}
+
+			for j, entry := range group.Entries {
+				isLastEntry := j == len(group.Entries)-1 && len(group.Groups) == 0
+				entryConnector := "├── "
+				if isLastEntry {
+					entryConnector = "└── "
+				}
+
+				entryPath := Path{
+					GroupIDs: append([]string{}, groupPath.GroupIDs...),
+					EntryID:  entry.ID,
+				}
+				isCurrentEntry := len(currentPath.GroupIDs) == len(entryPath.GroupIDs) &&
+					currentPath.EntryID == entry.ID
+				if isCurrentEntry {
+					for k := 0; k < len(entryPath.GroupIDs); k++ {
+						if k >= len(currentPath.GroupIDs) || entryPath.GroupIDs[k] != currentPath.GroupIDs[k] {
+							isCurrentEntry = false
+							break
+						}
+					}
+				}
+
+				entryMarker := ""
+				if isCurrentEntry {
+					entryMarker = " >>> [CURRENT]"
+				}
+
+				fmt.Printf("%s%s%s%s\n", newPrefix, entryConnector, entry.Title, entryMarker)
+			}
+
+			// Recursively display nested groups
+			nextPrefix := prefix
+			if depth > 0 {
+				if isLast {
+					nextPrefix += "    "
+				} else {
+					nextPrefix += "│   "
+				}
+			}
+			if isLastGroup {
+				nextPrefix += "    "
+			} else {
+				nextPrefix += "│   "
+			}
+
+			displayTree(group.Groups, groupPath, depth+1, nextPrefix, isLastGroup)
+		}
+	}
+
+	// Check if at root
+	isAtRoot := len(currentPath.GroupIDs) == 0
+	if isAtRoot {
+		fmt.Println("ROOT >>> [CURRENT]")
+	} else {
+		fmt.Println("ROOT")
+	}
+
+	if len(wallet.Groups) == 0 {
+		fmt.Println("  (empty)")
+	} else {
+		displayTree(wallet.Groups, Path{GroupIDs: []string{}}, 0, "", false)
+	}
+
+	fmt.Println()
 }
 
 func handleNavigateIntoGroup(service *WalletService, currentPath Path, scanner *bufio.Scanner) Path {
