@@ -1,2 +1,4 @@
 github.com/ShenHern/golang_start/greetings v0.0.0-20251221031625-ea6614c1d90b h1:bwUqAgYpJA39+spqtgrEksX3cNxZ0MXFhgT8vC9JPNw=
 github.com/ShenHern/golang_start/greetings v0.0.0-20251221031625-ea6614c1d90b/go.mod h1:5nWZ5stCRm8+e3T0Xp1/ZWvjWTC6TES2JddSV8lMIfU=
+github.com/ShenHern/golang_start/greetings v0.0.0-20251221151401-78c5ad7eb71a h1:FWbBuJHU/MF+bZnNCLriOhLk/ysWKZFo3NXZ3Q6yF18=
+github.com/ShenHern/golang_start/greetings v0.0.0-20251221151401-78c5ad7eb71a/go.mod h1:5nWZ5stCRm8+e3T0Xp1/ZWvjWTC6TES2JddSV8lMIfU=
