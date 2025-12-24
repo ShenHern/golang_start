@@ -67,9 +67,15 @@ func TraverseForward(wallet *Wallet, callback func(info PathInfo) bool) {
 		for i := range groups {
 			group := &groups[i]
 
+			// Create path that includes this group's ID
+			groupPath := Path{
+				GroupIDs: append([]string{}, currentPath.GroupIDs...),
+			}
+			groupPath.GroupIDs = append(groupPath.GroupIDs, group.ID)
+
 			// Process group
 			info := PathInfo{
-				Path:    currentPath,
+				Path:    groupPath,
 				Group:   group,
 				Depth:   depth,
 				IsEntry: false,
@@ -81,7 +87,7 @@ func TraverseForward(wallet *Wallet, callback func(info PathInfo) bool) {
 			// Process entries in this group
 			for j := range group.Entries {
 				entryPath := Path{
-					GroupIDs: append([]string{}, currentPath.GroupIDs...),
+					GroupIDs: append([]string{}, groupPath.GroupIDs...),
 					EntryID:  group.Entries[j].ID,
 				}
 				entryInfo := PathInfo{
@@ -96,10 +102,7 @@ func TraverseForward(wallet *Wallet, callback func(info PathInfo) bool) {
 			}
 
 			// Recursively traverse nested groups
-			newPath := Path{
-				GroupIDs: append(currentPath.GroupIDs, group.ID),
-			}
-			if !traverse(group.Groups, newPath, depth+1) {
+			if !traverse(group.Groups, groupPath, depth+1) {
 				return false
 			}
 		}
