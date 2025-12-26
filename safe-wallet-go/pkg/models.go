@@ -1,4 +1,4 @@
-package main
+package pkg
 
 // Wallet represents the root structure of the password storage
 type Wallet struct {

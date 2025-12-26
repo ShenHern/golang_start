@@ -1,4 +1,4 @@
-package main
+package pkg
 
 // EntryTemplate defines a template for creating new entries.
 type EntryTemplate struct {
@@ -7,7 +7,7 @@ type EntryTemplate struct {
 }
 
 // Defines the preset templates for creating new entries.
-var entryTemplates = []EntryTemplate{
+var EntryTemplates = []EntryTemplate{
 	{
 		Name: "Credit Card",
 		Fields: []EntryField{

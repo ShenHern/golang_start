@@ -6,6 +6,8 @@ import (
 	"log"
 	"os"
 	"strings"
+
+	"safe-wallet-go/pkg"
 )
 
 func main() {
@@ -13,7 +15,7 @@ func main() {
 
 	// Step 1: Handle password
 	var password string
-	if !WalletExists(filepath) {
+	if !pkg.WalletExists(filepath) {
 		fmt.Println("=== Safe Wallet - New Wallet ===")
 		fmt.Print("Create a password for your new wallet: ")
 		password = readPassword()
@@ -32,10 +34,10 @@ func main() {
 	}
 
 	// Initialize service
-	service := NewWalletService(filepath, password)
+	service := pkg.NewWalletService(filepath, password)
 
 	// Load or create wallet
-	if !WalletExists(filepath) {
+	if !pkg.WalletExists(filepath) {
 		fmt.Println("Creating new wallet...")
 		if err := service.CreateNew(); err != nil {
 			log.Fatal("Failed to create wallet:", err)
@@ -49,7 +51,7 @@ func main() {
 	}
 
 	// Start at root (empty path)
-	currentPath := Path{GroupIDs: []string{}}
+	currentPath := pkg.Path{GroupIDs: []string{}}
 
 	// Show menu on startup
 	fmt.Println("\nWelcome to Safe Wallet!")
@@ -100,7 +102,7 @@ func main() {
 		case "13", "n", "navigate":
 			currentPath = handleNavigateIntoGroup(service, currentPath, scanner)
 		case "14", "r", "root":
-			currentPath = Path{GroupIDs: []string{}}
+			currentPath = pkg.Path{GroupIDs: []string{}}
 			fmt.Println("Returned to root")
 		case "15", "save":
 			if err := service.Save(); err != nil {
@@ -129,17 +131,7 @@ func readPassword() string {
 	return ""
 }
 
-// isNumeric checks if a string contains only digits
-func isNumeric(s string) bool {
-	for _, c := range s {
-		if c < '0' || c > '9' {
-			return false
-		}
-	}
-	return true
-}
-
-func displayCurrentLocation(service *WalletService, path Path) {
+func displayCurrentLocation(service *pkg.WalletService, path pkg.Path) {
 	fmt.Println("\n" + strings.Repeat("=", 50))
 	if len(path.GroupIDs) == 0 {
 		fmt.Println("Current Location: ROOT")
@@ -147,10 +139,10 @@ func displayCurrentLocation(service *WalletService, path Path) {
 		var breadcrumbs []string
 		breadcrumbs = append(breadcrumbs, "ROOT")
 
-		currentPath := Path{GroupIDs: []string{}}
+		currentPath := pkg.Path{GroupIDs: []string{}}
 		for _, groupID := range path.GroupIDs {
 			currentPath.GroupIDs = append(currentPath.GroupIDs, groupID)
-			group, err := FindGroupByPath(service.GetWallet(), currentPath)
+			group, err := pkg.FindGroupByPath(service.GetWallet(), currentPath)
 			if err == nil {
 				breadcrumbs = append(breadcrumbs, group.Name)
 			}
@@ -181,7 +173,7 @@ func displayMenu() {
 	fmt.Println("  16 (q)  - Quit")
 }
 
-func handleCreateGroup(service *WalletService, path Path, scanner *bufio.Scanner) {
+func handleCreateGroup(service *pkg.WalletService, path pkg.Path, scanner *bufio.Scanner) {
 	fmt.Print("Enter group name: ")
 	if !scanner.Scan() {
 		return
@@ -192,10 +184,10 @@ func handleCreateGroup(service *WalletService, path Path, scanner *bufio.Scanner
 		return
 	}
 
-	group := &Group{
+	group := &pkg.Group{
 		Name:    name,
-		Groups:  []Group{},
-		Entries: []Entry{},
+		Groups:  []pkg.Group{},
+		Entries: []pkg.Entry{},
 	}
 
 	if err := service.AddGroup(path, group); err != nil {
@@ -209,7 +201,7 @@ func handleCreateGroup(service *WalletService, path Path, scanner *bufio.Scanner
 	}
 }
 
-func handleCreateEntry(service *WalletService, path Path, scanner *bufio.Scanner) {
+func handleCreateEntry(service *pkg.WalletService, path pkg.Path, scanner *bufio.Scanner) {
 	if len(path.GroupIDs) == 0 {
 		fmt.Println("Cannot create entry at root. Please navigate to a group first.")
 		return
@@ -237,10 +229,10 @@ func handleCreateEntry(service *WalletService, path Path, scanner *bufio.Scanner
 		return
 	}
 
-	var fields []EntryField
-	if choice > 0 && choice <= len(entryTemplates) {
+	var fields []pkg.EntryField
+	if choice > 0 && choice <= len(pkg.EntryTemplates) {
 		// Use selected template
-		template := entryTemplates[choice-1]
+		template := pkg.EntryTemplates[choice-1]
 		fmt.Printf("\n--- Creating entry from '%s' template ---\n", template.Name)
 		for _, field := range template.Fields {
 			fmt.Printf("Enter value for '%s': ", field.Name)
@@ -250,8 +242,8 @@ func handleCreateEntry(service *WalletService, path Path, scanner *bufio.Scanner
 			value := strings.TrimSpace(scanner.Text())
 
 			// If the field is a PIN, validate that it is numeric
-			if field.Type == FieldTypePIN {
-				for !isNumeric(value) {
+			if field.Type == pkg.FieldTypePIN {
+				for !pkg.IsNumeric(value) {
 					fmt.Print("Invalid PIN. Please enter numeric values only: ")
 					if !scanner.Scan() {
 						return
@@ -260,7 +252,7 @@ func handleCreateEntry(service *WalletService, path Path, scanner *bufio.Scanner
 				}
 			}
 
-			fields = append(fields, EntryField{Name: field.Name, Value: value, Type: field.Type})
+			fields = append(fields, pkg.EntryField{Name: field.Name, Value: value, Type: field.Type})
 		}
 	} else if choice == 0 {
 		// Custom entry
@@ -287,13 +279,13 @@ func handleCreateEntry(service *WalletService, path Path, scanner *bufio.Scanner
 				break
 			}
 			fieldTypeInput := strings.TrimSpace(strings.ToLower(scanner.Text()))
-			fieldType := FieldTypeGeneral
+			fieldType := pkg.FieldTypeGeneral
 			if fieldTypeInput == "p" || fieldTypeInput == "password" {
-				fieldType = FieldTypePassword
+				fieldType = pkg.FieldTypePassword
 			} else if fieldTypeInput == "i" || fieldTypeInput == "pin" {
-				fieldType = FieldTypePIN
+				fieldType = pkg.FieldTypePIN
 				// Validate PIN input
-				for !isNumeric(fieldValue) {
+				for !pkg.IsNumeric(fieldValue) {
 					fmt.Print("Invalid PIN. Please enter numeric values only: ")
 					if !scanner.Scan() {
 						break
@@ -302,14 +294,14 @@ func handleCreateEntry(service *WalletService, path Path, scanner *bufio.Scanner
 				}
 			}
 
-			fields = append(fields, EntryField{Name: fieldName, Value: fieldValue, Type: fieldType})
+			fields = append(fields, pkg.EntryField{Name: fieldName, Value: fieldValue, Type: fieldType})
 		}
 	} else {
 		fmt.Println("Invalid template choice")
 		return
 	}
 
-	entry := &Entry{
+	entry := &pkg.Entry{
 		Title:  title,
 		Fields: fields,
 	}
@@ -327,23 +319,22 @@ func handleCreateEntry(service *WalletService, path Path, scanner *bufio.Scanner
 
 func displayTemplates() {
 	fmt.Println("\nAvailable Templates:")
-	for i, template := range entryTemplates {
+	for i, template := range pkg.EntryTemplates {
 		fmt.Printf("  %d. %s\n", i+1, template.Name)
 	}
 	fmt.Println("  0. Custom")
 }
 
-
-func handleList(service *WalletService, path Path) {
-	var groups []Group
-	var entries []Entry
+func handleList(service *pkg.WalletService, path pkg.Path) {
+	var groups []pkg.Group
+	var entries []pkg.Entry
 
 	if len(path.GroupIDs) == 0 {
 		// At root - list root groups
 		groups = service.GetWallet().Groups
 		// No entries at root level
 	} else {
-		group, err := FindGroupByPath(service.GetWallet(), path)
+		group, err := pkg.FindGroupByPath(service.GetWallet(), path)
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
 			return
@@ -370,7 +361,7 @@ func handleList(service *WalletService, path Path) {
 			fmt.Printf("  %d. %s (ID: %s)\n", i+1, entry.Title, entry.ID)
 			for _, field := range entry.Fields {
 				value := field.Value
-				if field.Type == FieldTypePassword || field.Type == FieldTypePIN {
+				if field.Type == pkg.FieldTypePassword || field.Type == pkg.FieldTypePIN {
 					value = "******"
 				}
 				fmt.Printf("     %s: %s\n", field.Name, value)
@@ -383,13 +374,13 @@ func handleList(service *WalletService, path Path) {
 	}
 }
 
-func handleShowEntry(service *WalletService, path Path, scanner *bufio.Scanner) {
+func handleShowEntry(service *pkg.WalletService, path pkg.Path, scanner *bufio.Scanner) {
 	if len(path.GroupIDs) == 0 {
 		fmt.Println("No entries at root level.")
 		return
 	}
 
-	group, err := FindGroupByPath(service.GetWallet(), path)
+	group, err := pkg.FindGroupByPath(service.GetWallet(), path)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		return
@@ -431,13 +422,13 @@ func handleShowEntry(service *WalletService, path Path, scanner *bufio.Scanner) 
 	fmt.Println("---------------------------")
 }
 
-func handleUpdateGroup(service *WalletService, path Path, scanner *bufio.Scanner) {
+func handleUpdateGroup(service *pkg.WalletService, path pkg.Path, scanner *bufio.Scanner) {
 	if len(path.GroupIDs) == 0 {
 		fmt.Println("Cannot update root groups directly.")
 		return
 	}
 
-	group, err := FindGroupByPath(service.GetWallet(), path)
+	group, err := pkg.FindGroupByPath(service.GetWallet(), path)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		return
@@ -454,7 +445,7 @@ func handleUpdateGroup(service *WalletService, path Path, scanner *bufio.Scanner
 		return
 	}
 
-	updatedGroup := Group{
+	updatedGroup := pkg.Group{
 		Name:    newName,
 		Groups:  group.Groups,
 		Entries: group.Entries,
@@ -471,13 +462,13 @@ func handleUpdateGroup(service *WalletService, path Path, scanner *bufio.Scanner
 	}
 }
 
-func handleUpdateEntry(service *WalletService, path Path, scanner *bufio.Scanner) {
+func handleUpdateEntry(service *pkg.WalletService, path pkg.Path, scanner *bufio.Scanner) {
 	if len(path.GroupIDs) == 0 {
 		fmt.Println("No entries at root level.")
 		return
 	}
 
-	group, err := FindGroupByPath(service.GetWallet(), path)
+	group, err := pkg.FindGroupByPath(service.GetWallet(), path)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		return
@@ -510,7 +501,7 @@ func handleUpdateEntry(service *WalletService, path Path, scanner *bufio.Scanner
 	}
 
 	entry := &group.Entries[entryNum-1]
-	entryPath := Path{
+	entryPath := pkg.Path{
 		GroupIDs: path.GroupIDs,
 		EntryID:  entry.ID,
 	}
@@ -527,7 +518,7 @@ func handleUpdateEntry(service *WalletService, path Path, scanner *bufio.Scanner
 
 	// Manage fields
 	fmt.Println("\n--- Manage Fields ---")
-	var updatedFields []EntryField
+	var updatedFields []pkg.EntryField
 	for _, field := range entry.Fields {
 		fmt.Printf("\nField: '%s' (Type: %s)\n", field.Name, field.Type)
 		fmt.Printf("  Current Value: '%s'\n", field.Value)
@@ -558,19 +549,19 @@ func handleUpdateEntry(service *WalletService, path Path, scanner *bufio.Scanner
 
 			fmt.Printf("  New field type (g for general, p for password, i for pin) [current: %s]: ", field.Type)
 			if !scanner.Scan() {
-				updatedFields = append(updatedFields, EntryField{Name: newName, Value: newValue, Type: field.Type})
+				updatedFields = append(updatedFields, pkg.EntryField{Name: newName, Value: newValue, Type: field.Type})
 				continue
 			}
 			fieldTypeInput := strings.TrimSpace(strings.ToLower(scanner.Text()))
 			newType := field.Type
 			if fieldTypeInput == "p" || fieldTypeInput == "password" {
-				newType = FieldTypePassword
+				newType = pkg.FieldTypePassword
 			} else if fieldTypeInput == "g" || fieldTypeInput == "general" {
-				newType = FieldTypeGeneral
+				newType = pkg.FieldTypeGeneral
 			} else if fieldTypeInput == "i" || fieldTypeInput == "pin" {
-				newType = FieldTypePIN
+				newType = pkg.FieldTypePIN
 				// Validate PIN input
-				for !isNumeric(newValue) {
+				for !pkg.IsNumeric(newValue) {
 					fmt.Print("Invalid PIN. Please enter numeric values only: ")
 					if !scanner.Scan() {
 						break
@@ -579,7 +570,7 @@ func handleUpdateEntry(service *WalletService, path Path, scanner *bufio.Scanner
 				}
 			}
 
-			updatedFields = append(updatedFields, EntryField{Name: newName, Value: newValue, Type: newType})
+			updatedFields = append(updatedFields, pkg.EntryField{Name: newName, Value: newValue, Type: newType})
 		case "d", "delete":
 			// Do nothing, it won't be added to updatedFields
 		case "k", "keep":
@@ -613,13 +604,13 @@ func handleUpdateEntry(service *WalletService, path Path, scanner *bufio.Scanner
 			break
 		}
 		fieldTypeInput := strings.TrimSpace(strings.ToLower(scanner.Text()))
-		fieldType := FieldTypeGeneral
+		fieldType := pkg.FieldTypeGeneral
 		if fieldTypeInput == "p" || fieldTypeInput == "password" {
-			fieldType = FieldTypePassword
+			fieldType = pkg.FieldTypePassword
 		} else if fieldTypeInput == "i" || fieldTypeInput == "pin" {
-			fieldType = FieldTypePIN
+			fieldType = pkg.FieldTypePIN
 			// Validate PIN input
-			for !isNumeric(fieldValue) {
+			for !pkg.IsNumeric(fieldValue) {
 				fmt.Print("Invalid PIN. Please enter numeric values only: ")
 				if !scanner.Scan() {
 					break
@@ -628,7 +619,7 @@ func handleUpdateEntry(service *WalletService, path Path, scanner *bufio.Scanner
 			}
 		}
 
-		entry.Fields = append(entry.Fields, EntryField{Name: fieldName, Value: fieldValue, Type: fieldType})
+		entry.Fields = append(entry.Fields, pkg.EntryField{Name: fieldName, Value: fieldValue, Type: fieldType})
 	}
 
 	if err := service.UpdateEntry(entryPath, *entry); err != nil {
@@ -642,18 +633,18 @@ func handleUpdateEntry(service *WalletService, path Path, scanner *bufio.Scanner
 	}
 }
 
-func handleDeleteGroup(service *WalletService, path Path, scanner *bufio.Scanner) {
+func handleDeleteGroup(service *pkg.WalletService, path pkg.Path, scanner *bufio.Scanner) {
 	// List groups at current location
-	var groups []Group
-	var parentPath Path
+	var groups []pkg.Group
+	var parentPath pkg.Path
 	if len(path.GroupIDs) == 0 {
 		// At root - can delete root groups
 		groups = service.GetWallet().Groups
-		parentPath = Path{GroupIDs: []string{}}
+		parentPath = pkg.Path{GroupIDs: []string{}}
 	} else {
 		// At a group - list its subgroups
 		parentPath = path
-		group, err := FindGroupByPath(service.GetWallet(), path)
+		group, err := pkg.FindGroupByPath(service.GetWallet(), path)
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
 			return
@@ -688,7 +679,7 @@ func handleDeleteGroup(service *WalletService, path Path, scanner *bufio.Scanner
 	}
 
 	groupToDelete := groups[groupNum-1]
-	deletePath := Path{
+	deletePath := pkg.Path{
 		GroupIDs: append(parentPath.GroupIDs, groupToDelete.ID),
 	}
 
@@ -713,13 +704,13 @@ func handleDeleteGroup(service *WalletService, path Path, scanner *bufio.Scanner
 	}
 }
 
-func handleDeleteEntry(service *WalletService, path Path, scanner *bufio.Scanner) {
+func handleDeleteEntry(service *pkg.WalletService, path pkg.Path, scanner *bufio.Scanner) {
 	if len(path.GroupIDs) == 0 {
 		fmt.Println("No entries at root level.")
 		return
 	}
 
-	group, err := FindGroupByPath(service.GetWallet(), path)
+	group, err := pkg.FindGroupByPath(service.GetWallet(), path)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		return
@@ -745,7 +736,7 @@ func handleDeleteEntry(service *WalletService, path Path, scanner *bufio.Scanner
 		return
 	}
 
-	currentGroup, err := FindGroupByPath(service.GetWallet(), path)
+	currentGroup, err := pkg.FindGroupByPath(service.GetWallet(), path)
 	if err != nil {
 		fmt.Printf("Error: %v\n", err)
 		return
@@ -757,7 +748,7 @@ func handleDeleteEntry(service *WalletService, path Path, scanner *bufio.Scanner
 	}
 
 	entry := currentGroup.Entries[entryNum-1]
-	entryPath := Path{
+	entryPath := pkg.Path{
 		GroupIDs: path.GroupIDs,
 		EntryID:  entry.ID,
 	}
@@ -783,14 +774,14 @@ func handleDeleteEntry(service *WalletService, path Path, scanner *bufio.Scanner
 	}
 }
 
-func handleTraverseForward(service *WalletService, currentPath Path, scanner *bufio.Scanner) Path {
+func handleTraverseForward(service *pkg.WalletService, currentPath pkg.Path, scanner *bufio.Scanner) pkg.Path {
 	// Get groups and entries one level down from current location
-	var groups []Group
+	var groups []pkg.Group
 	if len(currentPath.GroupIDs) == 0 {
 		// At root - get root groups
 		groups = service.GetWallet().Groups
 	} else {
-		group, err := FindGroupByPath(service.GetWallet(), currentPath)
+		group, err := pkg.FindGroupByPath(service.GetWallet(), currentPath)
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
 			return currentPath
@@ -826,7 +817,7 @@ func handleTraverseForward(service *WalletService, currentPath Path, scanner *bu
 	}
 
 	selectedGroup := groups[groupNum-1]
-	newPath := Path{
+	newPath := pkg.Path{
 		GroupIDs: append(currentPath.GroupIDs, selectedGroup.ID),
 	}
 
@@ -834,20 +825,20 @@ func handleTraverseForward(service *WalletService, currentPath Path, scanner *bu
 	return newPath
 }
 
-func handleTraverseBackward(service *WalletService, currentPath Path) Path {
+func handleTraverseBackward(service *pkg.WalletService, currentPath pkg.Path) pkg.Path {
 	// Go up one level in the hierarchy
 	if len(currentPath.GroupIDs) == 0 {
 		fmt.Println("Already at root level. Cannot go up further.")
 		return currentPath
 	}
 
-	parentPath := GetParentPath(currentPath)
+	parentPath := pkg.GetParentPath(currentPath)
 
 	// Get parent group name for display
 	if len(parentPath.GroupIDs) == 0 {
 		fmt.Println("Moved up to root level")
 	} else {
-		parentGroup, err := FindGroupByPath(service.GetWallet(), parentPath)
+		parentGroup, err := pkg.FindGroupByPath(service.GetWallet(), parentPath)
 		if err == nil {
 			fmt.Printf("Moved up to group: %s\n", parentGroup.Name)
 		} else {
@@ -858,7 +849,7 @@ func handleTraverseBackward(service *WalletService, currentPath Path) Path {
 	return parentPath
 }
 
-func handleSearchEntry(service *WalletService, scanner *bufio.Scanner) {
+func handleSearchEntry(service *pkg.WalletService, scanner *bufio.Scanner) {
 	fmt.Print("Enter search term: ")
 	if !scanner.Scan() {
 		return
@@ -869,8 +860,8 @@ func handleSearchEntry(service *WalletService, scanner *bufio.Scanner) {
 		return
 	}
 
-	var foundEntries []PathInfo
-	service.TraverseForward(func(info PathInfo) bool {
+	var foundEntries []pkg.PathInfo
+	service.TraverseForward(func(info pkg.PathInfo) bool {
 		if info.IsEntry && info.Entry != nil {
 			// Search in title
 			if strings.Contains(strings.ToLower(info.Entry.Title), searchTerm) {
@@ -898,7 +889,7 @@ func handleSearchEntry(service *WalletService, scanner *bufio.Scanner) {
 		fmt.Printf("  %d. %s (ID: %s)\n", i+1, info.Entry.Title, info.Entry.ID)
 		for _, field := range info.Entry.Fields {
 			value := field.Value
-			if field.Type == FieldTypePassword || field.Type == FieldTypePIN {
+			if field.Type == pkg.FieldTypePassword || field.Type == pkg.FieldTypePIN {
 				value = "******"
 			}
 			fmt.Printf("     %s: %s\n", field.Name, value)
@@ -907,7 +898,7 @@ func handleSearchEntry(service *WalletService, scanner *bufio.Scanner) {
 	}
 }
 
-func handleDisplayTree(service *WalletService, currentPath Path) {
+func handleDisplayTree(service *pkg.WalletService, currentPath pkg.Path) {
 	wallet := service.GetWallet()
 	if wallet == nil {
 		fmt.Println("Wallet not loaded")
@@ -920,8 +911,8 @@ func handleDisplayTree(service *WalletService, currentPath Path) {
 	fmt.Println("(Current location marked with >>>)")
 	fmt.Println()
 
-	var displayTree func(groups []Group, path Path, depth int, prefix string, isLast bool)
-	displayTree = func(groups []Group, path Path, depth int, prefix string, isLast bool) {
+	var displayTree func(groups []pkg.Group, path pkg.Path, depth int, prefix string, isLast bool)
+	displayTree = func(groups []pkg.Group, path pkg.Path, depth int, prefix string, isLast bool) {
 		for i, group := range groups {
 			isLastGroup := i == len(groups)-1
 			currentPrefix := prefix
@@ -934,7 +925,7 @@ func handleDisplayTree(service *WalletService, currentPath Path) {
 			}
 
 			// Check if this is the current location
-			groupPath := Path{GroupIDs: append([]string{}, path.GroupIDs...)}
+			groupPath := pkg.Path{GroupIDs: append([]string{}, path.GroupIDs...)}
 			groupPath.GroupIDs = append(groupPath.GroupIDs, group.ID)
 			isCurrent := len(currentPath.GroupIDs) == len(groupPath.GroupIDs)
 			if isCurrent {
@@ -981,7 +972,7 @@ func handleDisplayTree(service *WalletService, currentPath Path) {
 					entryConnector = "└── "
 				}
 
-				entryPath := Path{
+				entryPath := pkg.Path{
 					GroupIDs: append([]string{}, groupPath.GroupIDs...),
 					EntryID:  entry.ID,
 				}
@@ -1034,18 +1025,18 @@ func handleDisplayTree(service *WalletService, currentPath Path) {
 	if len(wallet.Groups) == 0 {
 		fmt.Println("  (empty)")
 	} else {
-		displayTree(wallet.Groups, Path{GroupIDs: []string{}}, 0, "", false)
+		displayTree(wallet.Groups, pkg.Path{GroupIDs: []string{}}, 0, "", false)
 	}
 
 	fmt.Println()
 }
 
-func handleNavigateIntoGroup(service *WalletService, currentPath Path, scanner *bufio.Scanner) Path {
-	var groups []Group
+func handleNavigateIntoGroup(service *pkg.WalletService, currentPath pkg.Path, scanner *bufio.Scanner) pkg.Path {
+	var groups []pkg.Group
 	if len(currentPath.GroupIDs) == 0 {
 		groups = service.GetWallet().Groups
 	} else {
-		group, err := FindGroupByPath(service.GetWallet(), currentPath)
+		group, err := pkg.FindGroupByPath(service.GetWallet(), currentPath)
 		if err != nil {
 			fmt.Printf("Error: %v\n", err)
 			return currentPath
@@ -1075,7 +1066,7 @@ func handleNavigateIntoGroup(service *WalletService, currentPath Path, scanner *
 	}
 
 	selectedGroup := groups[groupNum-1]
-	newPath := Path{
+	newPath := pkg.Path{
 		GroupIDs: append(currentPath.GroupIDs, selectedGroup.ID),
 	}
 

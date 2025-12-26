@@ -1,2 +1,4 @@
+fyne.io/fyne/v2 v2.7.1 h1:ja7rNHWWEooha4XBIZNnPP8tVFwmTfwMJdpZmLxm2Zc=
+fyne.io/fyne/v2 v2.7.1/go.mod h1:xClVlrhxl7D+LT+BWYmcrW4Nf+dJTvkhnPgji7spAwE=
 golang.org/x/crypto v0.46.0 h1:cKRW/pmt1pKAfetfu+RCEvjvZkA9RimPbh7bhFjGVBU=
 golang.org/x/crypto v0.46.0/go.mod h1:Evb/oLKmMraqjZ2iQTwDwvCtJkczlDuTmdJXoZVzqU0=
