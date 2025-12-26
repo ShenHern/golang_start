@@ -129,17 +129,34 @@ func readPassword() string {
 	return ""
 }
 
+// isNumeric checks if a string contains only digits
+func isNumeric(s string) bool {
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 func displayCurrentLocation(service *WalletService, path Path) {
 	fmt.Println("\n" + strings.Repeat("=", 50))
 	if len(path.GroupIDs) == 0 {
 		fmt.Println("Current Location: ROOT")
 	} else {
-		group, err := FindGroupByPath(service.GetWallet(), path)
-		if err == nil {
-			fmt.Printf("Current Location: %s (ID: %s)\n", group.Name, group.ID)
-		} else {
-			fmt.Println("Current Location: ROOT")
+		var breadcrumbs []string
+		breadcrumbs = append(breadcrumbs, "ROOT")
+
+		currentPath := Path{GroupIDs: []string{}}
+		for _, groupID := range path.GroupIDs {
+			currentPath.GroupIDs = append(currentPath.GroupIDs, groupID)
+			group, err := FindGroupByPath(service.GetWallet(), currentPath)
+			if err == nil {
+				breadcrumbs = append(breadcrumbs, group.Name)
+			}
 		}
+
+		fmt.Printf("Current Location: %s\n", strings.Join(breadcrumbs, " > "))
 	}
 	fmt.Println(strings.Repeat("=", 50))
 }
@@ -208,35 +225,88 @@ func handleCreateEntry(service *WalletService, path Path, scanner *bufio.Scanner
 		return
 	}
 
+	// Display templates and get user's choice
+	displayTemplates()
+	fmt.Print("Choose a template (or 0 for custom): ")
+	if !scanner.Scan() {
+		return
+	}
+	var choice int
+	if _, err := fmt.Sscanf(scanner.Text(), "%d", &choice); err != nil {
+		fmt.Println("Invalid choice")
+		return
+	}
+
 	var fields []EntryField
-	fmt.Println("\nAdd fields (press Enter with empty field name to finish):")
-	for {
-		fmt.Print("Field name (e.g., Username, Password, URL): ")
-		if !scanner.Scan() {
-			break
-		}
-		fieldName := strings.TrimSpace(scanner.Text())
-		if fieldName == "" {
-			break
-		}
+	if choice > 0 && choice <= len(entryTemplates) {
+		// Use selected template
+		template := entryTemplates[choice-1]
+		fmt.Printf("\n--- Creating entry from '%s' template ---\n", template.Name)
+		for _, field := range template.Fields {
+			fmt.Printf("Enter value for '%s': ", field.Name)
+			if !scanner.Scan() {
+				return
+			}
+			value := strings.TrimSpace(scanner.Text())
 
-		fmt.Printf("Value for '%s': ", fieldName)
-		if !scanner.Scan() {
-			break
-		}
-		fieldValue := strings.TrimSpace(scanner.Text())
+			// If the field is a PIN, validate that it is numeric
+			if field.Type == FieldTypePIN {
+				for !isNumeric(value) {
+					fmt.Print("Invalid PIN. Please enter numeric values only: ")
+					if !scanner.Scan() {
+						return
+					}
+					value = strings.TrimSpace(scanner.Text())
+				}
+			}
 
-		fmt.Print("Field type (g for general, p for password) [g]: ")
-		if !scanner.Scan() {
-			break
+			fields = append(fields, EntryField{Name: field.Name, Value: value, Type: field.Type})
 		}
-		fieldTypeInput := strings.TrimSpace(strings.ToLower(scanner.Text()))
-		fieldType := FieldTypeGeneral
-		if fieldTypeInput == "p" || fieldTypeInput == "password" {
-			fieldType = FieldTypePassword
-		}
+	} else if choice == 0 {
+		// Custom entry
+		fmt.Println("\n--- Creating custom entry ---")
+		fmt.Println("Add fields (press Enter with empty field name to finish):")
+		for {
+			fmt.Print("Field name (e.g., Username, Password, URL): ")
+			if !scanner.Scan() {
+				break
+			}
+			fieldName := strings.TrimSpace(scanner.Text())
+			if fieldName == "" {
+				break
+			}
 
-		fields = append(fields, EntryField{Name: fieldName, Value: fieldValue, Type: fieldType})
+			fmt.Printf("Value for '%s': ", fieldName)
+			if !scanner.Scan() {
+				break
+			}
+			fieldValue := strings.TrimSpace(scanner.Text())
+
+			fmt.Print("Field type (g for general, p for password, i for pin) [g]: ")
+			if !scanner.Scan() {
+				break
+			}
+			fieldTypeInput := strings.TrimSpace(strings.ToLower(scanner.Text()))
+			fieldType := FieldTypeGeneral
+			if fieldTypeInput == "p" || fieldTypeInput == "password" {
+				fieldType = FieldTypePassword
+			} else if fieldTypeInput == "i" || fieldTypeInput == "pin" {
+				fieldType = FieldTypePIN
+				// Validate PIN input
+				for !isNumeric(fieldValue) {
+					fmt.Print("Invalid PIN. Please enter numeric values only: ")
+					if !scanner.Scan() {
+						break
+					}
+					fieldValue = strings.TrimSpace(scanner.Text())
+				}
+			}
+
+			fields = append(fields, EntryField{Name: fieldName, Value: fieldValue, Type: fieldType})
+		}
+	} else {
+		fmt.Println("Invalid template choice")
+		return
 	}
 
 	entry := &Entry{
@@ -254,6 +324,15 @@ func handleCreateEntry(service *WalletService, path Path, scanner *bufio.Scanner
 		fmt.Printf("Error saving: %v\n", err)
 	}
 }
+
+func displayTemplates() {
+	fmt.Println("\nAvailable Templates:")
+	for i, template := range entryTemplates {
+		fmt.Printf("  %d. %s\n", i+1, template.Name)
+	}
+	fmt.Println("  0. Custom")
+}
+
 
 func handleList(service *WalletService, path Path) {
 	var groups []Group
@@ -291,7 +370,7 @@ func handleList(service *WalletService, path Path) {
 			fmt.Printf("  %d. %s (ID: %s)\n", i+1, entry.Title, entry.ID)
 			for _, field := range entry.Fields {
 				value := field.Value
-				if field.Type == FieldTypePassword {
+				if field.Type == FieldTypePassword || field.Type == FieldTypePIN {
 					value = "******"
 				}
 				fmt.Printf("     %s: %s\n", field.Name, value)
@@ -477,7 +556,7 @@ func handleUpdateEntry(service *WalletService, path Path, scanner *bufio.Scanner
 			}
 			newValue := strings.TrimSpace(scanner.Text())
 
-			fmt.Print("  New field type (g for general, p for password) [current: %s]: ")
+			fmt.Printf("  New field type (g for general, p for password, i for pin) [current: %s]: ", field.Type)
 			if !scanner.Scan() {
 				updatedFields = append(updatedFields, EntryField{Name: newName, Value: newValue, Type: field.Type})
 				continue
@@ -488,6 +567,16 @@ func handleUpdateEntry(service *WalletService, path Path, scanner *bufio.Scanner
 				newType = FieldTypePassword
 			} else if fieldTypeInput == "g" || fieldTypeInput == "general" {
 				newType = FieldTypeGeneral
+			} else if fieldTypeInput == "i" || fieldTypeInput == "pin" {
+				newType = FieldTypePIN
+				// Validate PIN input
+				for !isNumeric(newValue) {
+					fmt.Print("Invalid PIN. Please enter numeric values only: ")
+					if !scanner.Scan() {
+						break
+					}
+					newValue = strings.TrimSpace(scanner.Text())
+				}
 			}
 
 			updatedFields = append(updatedFields, EntryField{Name: newName, Value: newValue, Type: newType})
@@ -519,7 +608,7 @@ func handleUpdateEntry(service *WalletService, path Path, scanner *bufio.Scanner
 		}
 		fieldValue := strings.TrimSpace(scanner.Text())
 
-		fmt.Print("Field type (g for general, p for password) [g]: ")
+		fmt.Print("Field type (g for general, p for password, i for pin) [g]: ")
 		if !scanner.Scan() {
 			break
 		}
@@ -527,6 +616,16 @@ func handleUpdateEntry(service *WalletService, path Path, scanner *bufio.Scanner
 		fieldType := FieldTypeGeneral
 		if fieldTypeInput == "p" || fieldTypeInput == "password" {
 			fieldType = FieldTypePassword
+		} else if fieldTypeInput == "i" || fieldTypeInput == "pin" {
+			fieldType = FieldTypePIN
+			// Validate PIN input
+			for !isNumeric(fieldValue) {
+				fmt.Print("Invalid PIN. Please enter numeric values only: ")
+				if !scanner.Scan() {
+					break
+				}
+				fieldValue = strings.TrimSpace(scanner.Text())
+			}
 		}
 
 		entry.Fields = append(entry.Fields, EntryField{Name: fieldName, Value: fieldValue, Type: fieldType})
@@ -799,7 +898,7 @@ func handleSearchEntry(service *WalletService, scanner *bufio.Scanner) {
 		fmt.Printf("  %d. %s (ID: %s)\n", i+1, info.Entry.Title, info.Entry.ID)
 		for _, field := range info.Entry.Fields {
 			value := field.Value
-			if field.Type == FieldTypePassword {
+			if field.Type == FieldTypePassword || field.Type == FieldTypePIN {
 				value = "******"
 			}
 			fmt.Printf("     %s: %s\n", field.Name, value)

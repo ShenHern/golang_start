@@ -36,6 +36,8 @@ const (
 	FieldTypeGeneral FieldType = "general"
 	// FieldTypePassword is for password fields that should be masked
 	FieldTypePassword FieldType = "password"
+	// FieldTypePIN is for PIN fields that should be masked and only accept numeric
+	FieldTypePIN FieldType = "pin"
 )
 
 // Path represents a path to a group or entry
