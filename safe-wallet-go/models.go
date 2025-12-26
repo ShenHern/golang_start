@@ -14,15 +14,29 @@ type Group struct {
 	Entries []Entry `json:"entries"`
 }
 
-// Entry represents a password entry
+// Entry represents a password entry with flexible, user-defined fields
 type Entry struct {
-	ID       string `json:"id"`
-	Title    string `json:"title"`
-	Username string `json:"username"`
-	Password string `json:"password"`
-	URL      string `json:"url"`
-	Notes    string `json:"notes"`
+	ID     string       `json:"id"`
+	Title  string       `json:"title"`
+	Fields []EntryField `json:"fields"`
 }
+
+// EntryField represents a key-value pair for an entry's field
+type EntryField struct {
+	Name  string    `json:"name"`
+	Value string    `json:"value"`
+	Type  FieldType `json:"type"`
+}
+
+// FieldType defines the type of an entry field
+type FieldType string
+
+const (
+	// FieldTypeGeneral is for general purpose fields like username, notes, etc.
+	FieldTypeGeneral FieldType = "general"
+	// FieldTypePassword is for password fields that should be masked
+	FieldTypePassword FieldType = "password"
+)
 
 // Path represents a path to a group or entry
 type Path struct {

@@ -79,9 +79,7 @@ func main() {
 			handleCreateEntry(service, currentPath, scanner)
 		case "3", "l", "list":
 			handleList(service, currentPath)
-		case "4", "s", "show":
-			handleShowEntry(service, currentPath, scanner)
-		case "5", "ug", "update-group":
+		case "4", "ug", "update-group":
 			handleUpdateGroup(service, currentPath, scanner)
 		case "6", "ue", "update-entry":
 			handleUpdateEntry(service, currentPath, scanner)
@@ -93,7 +91,7 @@ func main() {
 			currentPath = handleTraverseForward(service, currentPath, scanner)
 		case "10", "b", "back":
 			currentPath = handleTraverseBackward(service, currentPath)
-		case "11", "se", "search":
+		case "11", "s", "search":
 			handleSearchEntry(service, scanner)
 		case "12", "t", "tree":
 			handleDisplayTree(service, currentPath)
@@ -149,19 +147,18 @@ func displayMenu() {
 	fmt.Println("  1 (cg)  - Create Group")
 	fmt.Println("  2 (ce)  - Create Entry")
 	fmt.Println("  3 (l)   - List (groups and entries at current level)")
-	fmt.Println("  4 (s)   - Show Entry (view full entry details)")
-	fmt.Println("  5 (ug)  - Update Group")
-	fmt.Println("  6 (ue)  - Update Entry")
-	fmt.Println("  7 (dg)  - Delete Group")
-	fmt.Println("  8 (de)  - Delete Entry")
-	fmt.Println("  9 (f)   - Traverse Forward (groups one level down)")
-	fmt.Println("  10 (b)  - Traverse Backward (go up one level)")
-	fmt.Println("  11 (se) - Search Entry by Title")
-	fmt.Println("  12 (t)  - Display Tree (show full hierarchy)")
-	fmt.Println("  13 (n)  - Navigate into Group")
-	fmt.Println("  14 (r)  - Return to Root")
-	fmt.Println("  15      - Save Wallet")
-	fmt.Println("  16 (q)  - Quit")
+	fmt.Println("  4 (ug)  - Update Group")
+	fmt.Println("  5 (ue)  - Update Entry")
+	fmt.Println("  6 (dg)  - Delete Group")
+	fmt.Println("  7 (de)  - Delete Entry")
+	fmt.Println("  8 (f)   - Traverse Forward (groups one level down)")
+	fmt.Println("  9 (b)   - Traverse Backward (go up one level)")
+	fmt.Println("  10 (s)  - Search Entry by Title")
+	fmt.Println("  11 (t)  - Display Tree (show full hierarchy)")
+	fmt.Println("  12 (n)  - Navigate into Group")
+	fmt.Println("  13 (r)  - Return to Root")
+	fmt.Println("  14      - Save Wallet")
+	fmt.Println("  15 (q)  - Quit")
 }
 
 func handleCreateGroup(service *WalletService, path Path, scanner *bufio.Scanner) {
@@ -208,10 +205,35 @@ func handleCreateEntry(service *WalletService, path Path, scanner *bufio.Scanner
 		return
 	}
 
-	var fields []EntryField
-	fmt.Println("\nAdd fields (press Enter with empty field name to finish):")
+	fmt.Print("Enter username: ")
+	if !scanner.Scan() {
+		return
+	}
+	username := strings.TrimSpace(scanner.Text())
+
+	fmt.Print("Enter password: ")
+	if !scanner.Scan() {
+		return
+	}
+	password := strings.TrimSpace(scanner.Text())
+
+	fmt.Print("Enter URL (optional): ")
+	if !scanner.Scan() {
+		return
+	}
+	url := strings.TrimSpace(scanner.Text())
+
+	fmt.Print("Enter notes (optional): ")
+	if !scanner.Scan() {
+		return
+	}
+	notes := strings.TrimSpace(scanner.Text())
+
+	// Collect custom fields
+	customFields := make(map[string]string)
+	fmt.Println("\nAdd custom fields (press Enter with empty field name to finish):")
 	for {
-		fmt.Print("Field name (e.g., Username, Password, URL): ")
+		fmt.Print("Custom field name (or press Enter to finish): ")
 		if !scanner.Scan() {
 			break
 		}
@@ -220,28 +242,21 @@ func handleCreateEntry(service *WalletService, path Path, scanner *bufio.Scanner
 			break
 		}
 
-		fmt.Printf("Value for '%s': ", fieldName)
+		fmt.Printf("Custom field value for '%s': ", fieldName)
 		if !scanner.Scan() {
 			break
 		}
 		fieldValue := strings.TrimSpace(scanner.Text())
-
-		fmt.Print("Field type (g for general, p for password) [g]: ")
-		if !scanner.Scan() {
-			break
-		}
-		fieldTypeInput := strings.TrimSpace(strings.ToLower(scanner.Text()))
-		fieldType := FieldTypeGeneral
-		if fieldTypeInput == "p" || fieldTypeInput == "password" {
-			fieldType = FieldTypePassword
-		}
-
-		fields = append(fields, EntryField{Name: fieldName, Value: fieldValue, Type: fieldType})
+		customFields[fieldName] = fieldValue
 	}
 
 	entry := &Entry{
-		Title:  title,
-		Fields: fields,
+		Title:        title,
+		Username:     username,
+		Password:     password,
+		URL:          url,
+		Notes:        notes,
+		CustomFields: customFields,
 	}
 
 	if err := service.AddEntry(path, entry); err != nil {
@@ -289,12 +304,19 @@ func handleList(service *WalletService, path Path) {
 		fmt.Println("\nEntries:")
 		for i, entry := range entries {
 			fmt.Printf("  %d. %s (ID: %s)\n", i+1, entry.Title, entry.ID)
-			for _, field := range entry.Fields {
-				value := field.Value
-				if field.Type == FieldTypePassword {
-					value = "******"
+			fmt.Printf("     Username: %s\n", entry.Username)
+			fmt.Printf("     Password: %s\n", entry.Password)
+			if entry.URL != "" {
+				fmt.Printf("     URL: %s\n", entry.URL)
+			}
+			if entry.Notes != "" {
+				fmt.Printf("     Notes: %s\n", entry.Notes)
+			}
+			// Display custom fields
+			if entry.CustomFields != nil && len(entry.CustomFields) > 0 {
+				for key, value := range entry.CustomFields {
+					fmt.Printf("     %s: %s\n", key, value)
 				}
-				fmt.Printf("     %s: %s\n", field.Name, value)
 			}
 		}
 	} else {
@@ -302,54 +324,6 @@ func handleList(service *WalletService, path Path) {
 			fmt.Println("\nNo entries found in current group.")
 		}
 	}
-}
-
-func handleShowEntry(service *WalletService, path Path, scanner *bufio.Scanner) {
-	if len(path.GroupIDs) == 0 {
-		fmt.Println("No entries at root level.")
-		return
-	}
-
-	group, err := FindGroupByPath(service.GetWallet(), path)
-	if err != nil {
-		fmt.Printf("Error: %v\n", err)
-		return
-	}
-
-	if len(group.Entries) == 0 {
-		fmt.Println("No entries found in current group.")
-		return
-	}
-
-	fmt.Println("\nEntries:")
-	for i, entry := range group.Entries {
-		fmt.Printf("  %d. %s (ID: %s)\n", i+1, entry.Title, entry.ID)
-	}
-
-	fmt.Print("\nEnter entry number to show: ")
-	if !scanner.Scan() {
-		return
-	}
-
-	var entryNum int
-	if _, err := fmt.Sscanf(scanner.Text(), "%d", &entryNum); err != nil {
-		fmt.Println("Invalid entry number")
-		return
-	}
-
-	if entryNum < 1 || entryNum > len(group.Entries) {
-		fmt.Println("Invalid entry number")
-		return
-	}
-
-	entry := group.Entries[entryNum-1]
-
-	fmt.Printf("\n--- Entry Details: %s ---\n", entry.Title)
-	fmt.Printf("  ID: %s\n", entry.ID)
-	for _, field := range entry.Fields {
-		fmt.Printf("  %s: %s\n", field.Name, field.Value)
-	}
-	fmt.Println("---------------------------")
 }
 
 func handleUpdateGroup(service *WalletService, path Path, scanner *bufio.Scanner) {
@@ -412,8 +386,21 @@ func handleUpdateEntry(service *WalletService, path Path, scanner *bufio.Scanner
 	fmt.Println("\nEntries:")
 	for i, entry := range group.Entries {
 		fmt.Printf("  %d. %s (ID: %s)\n", i+1, entry.Title, entry.ID)
+		fmt.Printf("     Username: %s\n", entry.Username)
+		fmt.Printf("     Password: %s\n", entry.Password)
+		if entry.URL != "" {
+			fmt.Printf("     URL: %s\n", entry.URL)
+		}
+		if entry.Notes != "" {
+			fmt.Printf("     Notes: %s\n", entry.Notes)
+		}
+		// Display custom fields
+		if entry.CustomFields != nil && len(entry.CustomFields) > 0 {
+			for key, value := range entry.CustomFields {
+				fmt.Printf("     %s: %s\n", key, value)
+			}
+		}
 	}
-
 	fmt.Print("\nEnter entry number to update: ")
 	if !scanner.Scan() {
 		return
@@ -425,119 +412,125 @@ func handleUpdateEntry(service *WalletService, path Path, scanner *bufio.Scanner
 		return
 	}
 
-	if entryNum < 1 || entryNum > len(group.Entries) {
+	currentGroup, err := FindGroupByPath(service.GetWallet(), path)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		return
+	}
+
+	if entryNum < 1 || entryNum > len(currentGroup.Entries) {
 		fmt.Println("Invalid entry number")
 		return
 	}
 
-	entry := &group.Entries[entryNum-1]
+	entry := currentGroup.Entries[entryNum-1]
 	entryPath := Path{
 		GroupIDs: path.GroupIDs,
 		EntryID:  entry.ID,
 	}
 
-	fmt.Printf("\n--- Updating Entry: %s ---\n", entry.Title)
-
-	// Update title
+	fmt.Printf("Current entry: %s\n", entry.Title)
 	fmt.Print("Enter new title (press Enter to keep current): ")
-	if scanner.Scan() {
-		if newTitle := strings.TrimSpace(scanner.Text()); newTitle != "" {
-			entry.Title = newTitle
+	if !scanner.Scan() {
+		return
+	}
+	newTitle := strings.TrimSpace(scanner.Text())
+	if newTitle == "" {
+		newTitle = entry.Title
+	}
+
+	fmt.Print("Enter new username (press Enter to keep current): ")
+	if !scanner.Scan() {
+		return
+	}
+	newUsername := strings.TrimSpace(scanner.Text())
+	if newUsername == "" {
+		newUsername = entry.Username
+	}
+
+	fmt.Print("Enter new password (press Enter to keep current): ")
+	if !scanner.Scan() {
+		return
+	}
+	newPassword := strings.TrimSpace(scanner.Text())
+	if newPassword == "" {
+		newPassword = entry.Password
+	}
+
+	fmt.Print("Enter new URL (press Enter to keep current): ")
+	if !scanner.Scan() {
+		return
+	}
+	newURL := strings.TrimSpace(scanner.Text())
+	if newURL == "" {
+		newURL = entry.URL
+	}
+
+	fmt.Print("Enter new notes (press Enter to keep current): ")
+	if !scanner.Scan() {
+		return
+	}
+	newNotes := strings.TrimSpace(scanner.Text())
+	if newNotes == "" {
+		newNotes = entry.Notes
+	}
+
+	// Handle custom fields
+	newCustomFields := make(map[string]string)
+	if entry.CustomFields != nil {
+		// Copy existing custom fields
+		for k, v := range entry.CustomFields {
+			newCustomFields[k] = v
 		}
 	}
 
-	// Manage fields
-	fmt.Println("\n--- Manage Fields ---")
-	var updatedFields []EntryField
-	for _, field := range entry.Fields {
-		fmt.Printf("\nField: '%s' (Type: %s)\n", field.Name, field.Type)
-		fmt.Printf("  Current Value: '%s'\n", field.Value)
-		fmt.Print("Action [(K)eep, (E)dit Field, (D)elete Field]: ")
-		if !scanner.Scan() {
-			updatedFields = append(updatedFields, field)
-			continue
-		}
+	fmt.Println("\nManage custom fields:")
+	fmt.Println("  1. Keep existing custom fields")
+	fmt.Println("  2. Edit custom fields")
+	fmt.Print("Choose option (1 or 2): ")
+	if !scanner.Scan() {
+		return
+	}
+	choice := strings.TrimSpace(scanner.Text())
 
-		switch strings.ToLower(strings.TrimSpace(scanner.Text())) {
-		case "e", "edit":
-			fmt.Print("  New field name (press Enter to keep current): ")
+	if choice == "2" {
+		// Clear existing and add new
+		newCustomFields = make(map[string]string)
+		fmt.Println("Enter custom fields (press Enter with empty field name to finish):")
+		for {
+			fmt.Print("Custom field name (or press Enter to finish): ")
 			if !scanner.Scan() {
-				updatedFields = append(updatedFields, field)
-				continue
+				break
 			}
-			newName := strings.TrimSpace(scanner.Text())
-			if newName == "" {
-				newName = field.Name
+			fieldName := strings.TrimSpace(scanner.Text())
+			if fieldName == "" {
+				break
 			}
 
-			fmt.Printf("  New value for '%s': ", newName)
+			fmt.Printf("Custom field value for '%s': ", fieldName)
 			if !scanner.Scan() {
-				updatedFields = append(updatedFields, field)
-				continue
+				break
 			}
-			newValue := strings.TrimSpace(scanner.Text())
-
-			fmt.Print("  New field type (g for general, p for password) [current: %s]: ")
-			if !scanner.Scan() {
-				updatedFields = append(updatedFields, EntryField{Name: newName, Value: newValue, Type: field.Type})
-				continue
-			}
-			fieldTypeInput := strings.TrimSpace(strings.ToLower(scanner.Text()))
-			newType := field.Type
-			if fieldTypeInput == "p" || fieldTypeInput == "password" {
-				newType = FieldTypePassword
-			} else if fieldTypeInput == "g" || fieldTypeInput == "general" {
-				newType = FieldTypeGeneral
-			}
-
-			updatedFields = append(updatedFields, EntryField{Name: newName, Value: newValue, Type: newType})
-		case "d", "delete":
-			// Do nothing, it won't be added to updatedFields
-		case "k", "keep":
-			fallthrough
-		default:
-			updatedFields = append(updatedFields, field)
+			fieldValue := strings.TrimSpace(scanner.Text())
+			newCustomFields[fieldName] = fieldValue
 		}
 	}
-	entry.Fields = updatedFields
 
-	// Add new fields
-	fmt.Println("\n--- Add New Fields ---")
-	for {
-		fmt.Print("Enter new field name (or press Enter to finish): ")
-		if !scanner.Scan() {
-			break
-		}
-		fieldName := strings.TrimSpace(scanner.Text())
-		if fieldName == "" {
-			break
-		}
-
-		fmt.Printf("Enter value for '%s': ", fieldName)
-		if !scanner.Scan() {
-			break
-		}
-		fieldValue := strings.TrimSpace(scanner.Text())
-
-		fmt.Print("Field type (g for general, p for password) [g]: ")
-		if !scanner.Scan() {
-			break
-		}
-		fieldTypeInput := strings.TrimSpace(strings.ToLower(scanner.Text()))
-		fieldType := FieldTypeGeneral
-		if fieldTypeInput == "p" || fieldTypeInput == "password" {
-			fieldType = FieldTypePassword
-		}
-
-		entry.Fields = append(entry.Fields, EntryField{Name: fieldName, Value: fieldValue, Type: fieldType})
+	updatedEntry := Entry{
+		Title:        newTitle,
+		Username:     newUsername,
+		Password:     newPassword,
+		URL:          newURL,
+		Notes:        newNotes,
+		CustomFields: newCustomFields,
 	}
 
-	if err := service.UpdateEntry(entryPath, *entry); err != nil {
+	if err := service.UpdateEntry(entryPath, updatedEntry); err != nil {
 		fmt.Printf("Error updating entry: %v\n", err)
 		return
 	}
 
-	fmt.Println("\nEntry updated successfully!")
+	fmt.Println("Entry updated successfully!")
 	if err := service.Save(); err != nil {
 		fmt.Printf("Error saving: %v\n", err)
 	}
@@ -634,6 +627,20 @@ func handleDeleteEntry(service *WalletService, path Path, scanner *bufio.Scanner
 	fmt.Println("\nEntries:")
 	for i, entry := range group.Entries {
 		fmt.Printf("  %d. %s (ID: %s)\n", i+1, entry.Title, entry.ID)
+		fmt.Printf("     Username: %s\n", entry.Username)
+		fmt.Printf("     Password: %s\n", entry.Password)
+		if entry.URL != "" {
+			fmt.Printf("     URL: %s\n", entry.URL)
+		}
+		if entry.Notes != "" {
+			fmt.Printf("     Notes: %s\n", entry.Notes)
+		}
+		// Display custom fields
+		if entry.CustomFields != nil && len(entry.CustomFields) > 0 {
+			for key, value := range entry.CustomFields {
+				fmt.Printf("     %s: %s\n", key, value)
+			}
+		}
 	}
 	fmt.Print("\nEnter entry number to delete: ")
 	if !scanner.Scan() {
@@ -760,49 +767,47 @@ func handleTraverseBackward(service *WalletService, currentPath Path) Path {
 }
 
 func handleSearchEntry(service *WalletService, scanner *bufio.Scanner) {
-	fmt.Print("Enter search term: ")
+	fmt.Print("Enter entry title to search: ")
 	if !scanner.Scan() {
 		return
 	}
-	searchTerm := strings.TrimSpace(strings.ToLower(scanner.Text()))
-	if searchTerm == "" {
-		fmt.Println("Search term cannot be empty")
+	searchTitle := strings.TrimSpace(scanner.Text())
+	if searchTitle == "" {
+		fmt.Println("Search title cannot be empty")
 		return
 	}
 
 	var foundEntries []PathInfo
 	service.TraverseForward(func(info PathInfo) bool {
 		if info.IsEntry && info.Entry != nil {
-			// Search in title
-			if strings.Contains(strings.ToLower(info.Entry.Title), searchTerm) {
+			if strings.Contains(strings.ToLower(info.Entry.Title), strings.ToLower(searchTitle)) {
 				foundEntries = append(foundEntries, info)
-				return true
-			}
-			// Search in fields
-			for _, field := range info.Entry.Fields {
-				if strings.Contains(strings.ToLower(field.Name), searchTerm) || strings.Contains(strings.ToLower(field.Value), searchTerm) {
-					foundEntries = append(foundEntries, info)
-					return true // Found a match, no need to check other fields for this entry
-				}
 			}
 		}
 		return true
 	})
 
 	if len(foundEntries) == 0 {
-		fmt.Printf("No entries found matching '%s'\n", searchTerm)
+		fmt.Printf("No entries found matching '%s'\n", searchTitle)
 		return
 	}
 
 	fmt.Printf("\nFound %d entry/entries:\n", len(foundEntries))
 	for i, info := range foundEntries {
 		fmt.Printf("  %d. %s (ID: %s)\n", i+1, info.Entry.Title, info.Entry.ID)
-		for _, field := range info.Entry.Fields {
-			value := field.Value
-			if field.Type == FieldTypePassword {
-				value = "******"
+		fmt.Printf("     Username: %s\n", info.Entry.Username)
+		fmt.Printf("     Password: %s\n", info.Entry.Password)
+		if info.Entry.URL != "" {
+			fmt.Printf("     URL: %s\n", info.Entry.URL)
+		}
+		if info.Entry.Notes != "" {
+			fmt.Printf("     Notes: %s\n", info.Entry.Notes)
+		}
+		// Display custom fields
+		if info.Entry.CustomFields != nil && len(info.Entry.CustomFields) > 0 {
+			for key, value := range info.Entry.CustomFields {
+				fmt.Printf("     %s: %s\n", key, value)
 			}
-			fmt.Printf("     %s: %s\n", field.Name, value)
 		}
 		fmt.Printf("     Path: %v\n", info.Path.GroupIDs)
 	}
