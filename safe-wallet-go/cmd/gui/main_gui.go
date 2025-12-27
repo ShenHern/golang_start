@@ -45,7 +45,7 @@ func NewVaultApp() *VaultApp {
 }
 
 func (va *VaultApp) Run() {
-	va.mainWindow = va.app.NewWindow("Safe Wallet - Password Vault")
+	va.mainWindow = va.app.NewWindow("Safe Wallet Go! - Password Vault")
 	va.mainWindow.Resize(fyne.NewSize(1200, 700))
 	va.mainWindow.CenterOnScreen()
 
@@ -73,7 +73,7 @@ func (va *VaultApp) showUnlockScreen() {
 		confirmEntry := widget.NewPasswordEntry()
 		confirmEntry.SetPlaceHolder("Confirm Password")
 
-		createBtn := widget.NewButton("Create Vault", func() {
+		createVault := func() {
 			if passwordEntry.Text == "" {
 				dialog.ShowError(fmt.Errorf("password cannot be empty"), va.mainWindow)
 				return
@@ -92,8 +92,18 @@ func (va *VaultApp) showUnlockScreen() {
 
 			dialog.ShowInformation("Success", "Wallet created successfully!", va.mainWindow)
 			va.showMainInterface()
-		})
+		}
+
+		createBtn := widget.NewButton("Create Vault", createVault)
 		createBtn.Importance = widget.HighImportance
+
+		// Allow Enter key to submit
+		passwordEntry.OnSubmitted = func(s string) {
+			confirmEntry.FocusGained()
+		}
+		confirmEntry.OnSubmitted = func(s string) {
+			createVault()
+		}
 
 		content = container.NewVBox(
 			layout.NewSpacer(),
@@ -109,6 +119,9 @@ func (va *VaultApp) showUnlockScreen() {
 			),
 			layout.NewSpacer(),
 		)
+
+		// Set focus on password entry after a short delay
+		va.mainWindow.Canvas().Focus(passwordEntry)
 	} else {
 		// Unlock existing wallet
 		subtitle := widget.NewLabel("Enter your master password to unlock")
@@ -117,7 +130,7 @@ func (va *VaultApp) showUnlockScreen() {
 		passwordEntry := widget.NewPasswordEntry()
 		passwordEntry.SetPlaceHolder("Master Password")
 
-		unlockBtn := widget.NewButton("Unlock Vault", func() {
+		unlockVault := func() {
 			if passwordEntry.Text == "" {
 				dialog.ShowError(fmt.Errorf("password cannot be empty"), va.mainWindow)
 				return
@@ -130,8 +143,15 @@ func (va *VaultApp) showUnlockScreen() {
 			}
 
 			va.showMainInterface()
-		})
+		}
+
+		unlockBtn := widget.NewButton("Unlock Vault", unlockVault)
 		unlockBtn.Importance = widget.HighImportance
+
+		// Allow Enter key to submit
+		passwordEntry.OnSubmitted = func(s string) {
+			unlockVault()
+		}
 
 		content = container.NewVBox(
 			layout.NewSpacer(),
@@ -146,6 +166,9 @@ func (va *VaultApp) showUnlockScreen() {
 			),
 			layout.NewSpacer(),
 		)
+
+		// Set focus on password entry
+		va.mainWindow.Canvas().Focus(passwordEntry)
 	}
 
 	va.mainWindow.SetContent(content)
@@ -158,18 +181,6 @@ func (va *VaultApp) showMainInterface() {
 	// Create breadcrumbs
 	va.breadcrumbs = widget.NewLabel(va.getBreadcrumbText())
 	va.breadcrumbs.TextStyle = fyne.TextStyle{Bold: true}
-
-	// Create search bar
-	va.searchEntry = widget.NewEntry()
-	va.searchEntry.SetPlaceHolder("Search entries...")
-	va.searchEntry.OnChanged = func(s string) {
-		if s != "" {
-			va.performSearch(s)
-		}
-	}
-
-	searchContainer := container.NewBorder(nil, nil,
-		widget.NewIcon(theme.SearchIcon()), nil, va.searchEntry)
 
 	// Create tree widget for groups
 	va.treeWidget = va.createTreeWidget()
@@ -185,7 +196,7 @@ func (va *VaultApp) showMainInterface() {
 
 	// Layout
 	leftPanel := container.NewBorder(
-		container.NewVBox(va.breadcrumbs, searchContainer),
+		va.breadcrumbs,
 		nil, nil, nil,
 		container.NewScroll(va.treeWidget),
 	)
@@ -228,6 +239,9 @@ func (va *VaultApp) createToolbar() *widget.Toolbar {
 		widget.NewToolbarSpacer(),
 		widget.NewToolbarAction(theme.HomeIcon(), func() {
 			va.currentPath = pkg.Path{GroupIDs: []string{}}
+			va.treeWidget.UnselectAll()
+			va.treeWidget.CloseAllBranches()
+			va.showGroupDetails(nil)
 			va.refreshUI()
 		}),
 		widget.NewToolbarAction(theme.NavigateBackIcon(), func() {
@@ -454,57 +468,70 @@ func (va *VaultApp) showGroupDetails(group *pkg.Group) {
 }
 
 func (va *VaultApp) showEntryDetails(entry pkg.Entry, groupPath pkg.Path) {
+	// Update current path and breadcrumbs when viewing an entry
+	va.currentPath = groupPath
+	va.updateBreadcrumbs()
+
 	title := widget.NewLabelWithStyle(entry.Title, fyne.TextAlignLeading, fyne.TextStyle{Bold: true})
+	title.Wrapping = fyne.TextWrapWord
 
 	fieldsContainer := container.NewVBox()
 
 	for _, field := range entry.Fields {
 		fieldLabel := widget.NewLabel(field.Name + ":")
+		fieldLabel.TextStyle = fyne.TextStyle{Bold: true}
 
 		var valueWidget fyne.CanvasObject
 
 		if field.Type == pkg.FieldTypePassword || field.Type == pkg.FieldTypePIN {
-			passwordEntry := widget.NewPasswordEntry()
-			passwordEntry.SetText(field.Value)
-			passwordEntry.Disable()
+			// Use a label instead of entry for better scrolling
+			valueLabel := widget.NewLabel(field.Value)
+			if field.Type == pkg.FieldTypePassword || field.Type == pkg.FieldTypePIN {
+				// Show as dots initially
+				valueLabel.SetText(strings.Repeat("•", len(field.Value)))
+			}
 
-			showBtn := widget.NewButtonWithIcon("", theme.VisibilityIcon(), func(pe *widget.Entry) func() {
+			showBtn := widget.NewButtonWithIcon("", theme.VisibilityIcon(), func(lbl *widget.Label, val string, isHidden *bool) func() {
+				hidden := true
+				isHidden = &hidden
 				return func() {
-					if pe.Password {
-						pe.Password = false
+					if *isHidden {
+						lbl.SetText(val)
+						*isHidden = false
 					} else {
-						pe.Password = true
+						lbl.SetText(strings.Repeat("•", len(val)))
+						*isHidden = true
 					}
-					pe.Refresh()
 				}
-			}(passwordEntry))
+			}(valueLabel, field.Value, nil))
 
-			copyBtn := widget.NewButtonWithIcon("", theme.ContentCopyIcon(), func(val string) func() {
+			copyBtn := widget.NewButtonWithIcon("", theme.ContentCopyIcon(), func(val string, name string) func() {
 				return func() {
 					va.mainWindow.Clipboard().SetContent(val)
-					dialog.ShowInformation("Copied", field.Name+" copied to clipboard", va.mainWindow)
+					dialog.ShowInformation("Copied", name+" copied to clipboard", va.mainWindow)
 				}
-			}(field.Value))
+			}(field.Value, field.Name))
 
 			valueWidget = container.NewBorder(nil, nil, nil,
-				container.NewHBox(showBtn, copyBtn), passwordEntry)
+				container.NewHBox(showBtn, copyBtn), valueLabel)
 		} else {
-			valueEntry := widget.NewEntry()
-			valueEntry.SetText(field.Value)
-			valueEntry.Disable()
+			// For general fields, use label for better scrolling
+			valueLabel := widget.NewLabel(field.Value)
+			valueLabel.Wrapping = fyne.TextWrapWord
 
-			copyBtn := widget.NewButtonWithIcon("", theme.ContentCopyIcon(), func(val string) func() {
+			copyBtn := widget.NewButtonWithIcon("", theme.ContentCopyIcon(), func(val string, name string) func() {
 				return func() {
 					va.mainWindow.Clipboard().SetContent(val)
-					dialog.ShowInformation("Copied", field.Name+" copied to clipboard", va.mainWindow)
+					dialog.ShowInformation("Copied", name+" copied to clipboard", va.mainWindow)
 				}
-			}(field.Value))
+			}(field.Value, field.Name))
 
-			valueWidget = container.NewBorder(nil, nil, nil, copyBtn, valueEntry)
+			valueWidget = container.NewBorder(nil, nil, nil, copyBtn, valueLabel)
 		}
 
 		fieldsContainer.Add(fieldLabel)
 		fieldsContainer.Add(valueWidget)
+		fieldsContainer.Add(widget.NewSeparator())
 	}
 
 	editBtn := widget.NewButtonWithIcon("Edit", theme.DocumentCreateIcon(), func() {
@@ -522,13 +549,29 @@ func (va *VaultApp) showEntryDetails(entry pkg.Entry, groupPath pkg.Path) {
 		title,
 		widget.NewSeparator(),
 		fieldsContainer,
-		layout.NewSpacer(),
+		widget.NewSeparator(),
 		buttons,
 	)
 
 	scroll := container.NewScroll(details)
+	scroll.SetMinSize(fyne.NewSize(400, 300))
+
 	va.detailsPanel.Objects = []fyne.CanvasObject{scroll}
 	va.detailsPanel.Refresh()
+}
+
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 func (va *VaultApp) showAddGroupDialog() {
@@ -592,15 +635,17 @@ func (va *VaultApp) showAddEntryDialog() {
 
 	fieldsContainer := container.NewVBox()
 	var fields []pkg.EntryField
+	var fieldEntries []*widget.Entry
 
 	updateFieldsUI := func(templateName string) {
 		fieldsContainer.Objects = nil
 		fields = []pkg.EntryField{}
+		fieldEntries = []*widget.Entry{}
 
 		if templateName == "Custom" {
 			// Show add field button for custom
 			addFieldBtn := widget.NewButton("Add Field", func() {
-				va.showAddFieldDialog(&fields, fieldsContainer)
+				va.showAddCustomFieldDialog(&fields, fieldsContainer, &fieldEntries)
 			})
 			fieldsContainer.Add(addFieldBtn)
 		} else {
@@ -616,18 +661,45 @@ func (va *VaultApp) showAddEntryDialog() {
 
 						label := widget.NewLabel(templateField.Name + "*:")
 						var entry *widget.Entry
-						if templateField.Type == pkg.FieldTypePassword || templateField.Type == pkg.FieldTypePIN {
+
+						if templateField.Type == pkg.FieldTypePassword {
 							entry = widget.NewPasswordEntry()
+						} else if templateField.Type == pkg.FieldTypePIN {
+							entry = widget.NewEntry()
+							entry.SetPlaceHolder("Numbers only")
+							idx := len(fields) - 1
+							entry.OnChanged = func(idx int) func(string) {
+								return func(s string) {
+									filtered := ""
+									for _, r := range s {
+										if r >= '0' && r <= '9' {
+											filtered += string(r)
+										}
+									}
+									if filtered != s {
+										entry.SetText(filtered)
+									}
+									fields[idx].Value = filtered
+								}
+							}(idx)
 						} else {
 							entry = widget.NewEntry()
+							idx := len(fields) - 1
+							entry.OnChanged = func(idx int) func(string) {
+								return func(s string) {
+									fields[idx].Value = s
+								}
+							}(idx)
 						}
 
-						idx := len(fields) - 1
-						entry.OnChanged = func(idx int) func(string) {
-							return func(s string) {
-								fields[idx].Value = s
-							}
-						}(idx)
+						if templateField.Type != pkg.FieldTypePIN {
+							idx := len(fields) - 1
+							entry.OnChanged = func(idx int) func(string) {
+								return func(s string) {
+									fields[idx].Value = s
+								}
+							}(idx)
+						}
 
 						fieldsContainer.Add(label)
 						fieldsContainer.Add(entry)
@@ -695,7 +767,7 @@ func (va *VaultApp) showAddEntryDialog() {
 	d.Show()
 }
 
-func (va *VaultApp) showAddFieldDialog(fields *[]pkg.EntryField, fieldsContainer *fyne.Container) {
+func (va *VaultApp) showAddCustomFieldDialog(fields *[]pkg.EntryField, fieldsContainer *fyne.Container, fieldEntries *[]*widget.Entry) {
 	nameEntry := widget.NewEntry()
 	nameEntry.SetPlaceHolder("Field Name")
 
@@ -705,44 +777,131 @@ func (va *VaultApp) showAddFieldDialog(fields *[]pkg.EntryField, fieldsContainer
 	typeSelect := widget.NewSelect([]string{"General", "Password", "PIN"}, nil)
 	typeSelect.SetSelected("General")
 
-	form := &widget.Form{
-		Items: []*widget.FormItem{
-			widget.NewFormItem("Name*", nameEntry),
-			widget.NewFormItem("Value*", valueEntry),
-			widget.NewFormItem("Type", typeSelect),
-		},
-		OnSubmit: func() {
-			if nameEntry.Text == "" || valueEntry.Text == "" {
-				dialog.ShowError(fmt.Errorf("name and value cannot be empty"), va.mainWindow)
-				return
+	typeSelect.OnChanged = func(selected string) {
+		if selected == "PIN" {
+			valueEntry.SetPlaceHolder("Numbers only")
+			valueEntry.OnChanged = func(s string) {
+				filtered := ""
+				for _, r := range s {
+					if r >= '0' && r <= '9' {
+						filtered += string(r)
+					}
+				}
+				if filtered != s {
+					valueEntry.SetText(filtered)
+				}
 			}
-
-			fieldType := pkg.FieldTypeGeneral
-			switch typeSelect.Selected {
-			case "Password":
-				fieldType = pkg.FieldTypePassword
-			case "PIN":
-				fieldType = pkg.FieldTypePIN
-			}
-
-			*fields = append(*fields, pkg.EntryField{
-				Name:  nameEntry.Text,
-				Value: valueEntry.Text,
-				Type:  fieldType,
-			})
-
-			// Update UI
-			label := widget.NewLabel(nameEntry.Text + ":")
-			value := widget.NewLabel(valueEntry.Text)
-			fieldsContainer.Add(container.NewHBox(label, value))
-			fieldsContainer.Refresh()
-		},
-		OnCancel: func() {},
+		} else {
+			valueEntry.SetPlaceHolder("Field Value")
+			valueEntry.OnChanged = nil
+		}
 	}
 
-	d := dialog.NewCustom("Add Field", "Close", form, va.mainWindow)
+	d := dialog.NewForm("Add Field", "Add", "Cancel", []*widget.FormItem{
+		widget.NewFormItem("Name*", nameEntry),
+		widget.NewFormItem("Value*", valueEntry),
+		widget.NewFormItem("Type", typeSelect),
+	}, func(ok bool) {
+		if !ok {
+			return
+		}
+
+		if nameEntry.Text == "" || valueEntry.Text == "" {
+			dialog.ShowError(fmt.Errorf("name and value cannot be empty"), va.mainWindow)
+			return
+		}
+
+		fieldType := pkg.FieldTypeGeneral
+		switch typeSelect.Selected {
+		case "Password":
+			fieldType = pkg.FieldTypePassword
+		case "PIN":
+			fieldType = pkg.FieldTypePIN
+			if !pkg.IsNumeric(valueEntry.Text) {
+				dialog.ShowError(fmt.Errorf("PIN must contain only numbers"), va.mainWindow)
+				return
+			}
+		}
+
+		newField := pkg.EntryField{
+			Name:  nameEntry.Text,
+			Value: valueEntry.Text,
+			Type:  fieldType,
+		}
+		*fields = append(*fields, newField)
+
+		// Add field display to UI
+		fieldBox := container.NewHBox()
+		fieldLabel := widget.NewLabel(nameEntry.Text + ": ")
+		fieldLabel.TextStyle = fyne.TextStyle{Bold: true}
+
+		var valueLabel *widget.Label
+		if fieldType == pkg.FieldTypePassword || fieldType == pkg.FieldTypePIN {
+			valueLabel = widget.NewLabel(strings.Repeat("•", len(valueEntry.Text)))
+		} else {
+			valueLabel = widget.NewLabel(valueEntry.Text)
+		}
+
+		// Add delete button for the field
+		deleteBtn := widget.NewButtonWithIcon("", theme.DeleteIcon(), func(idx int) func() {
+			return func() {
+				// Remove from fields slice
+				*fields = append((*fields)[:idx], (*fields)[idx+1:]...)
+				// Rebuild UI
+				va.rebuildCustomFieldsUI(fields, fieldsContainer)
+			}
+		}(len(*fields)-1))
+
+		fieldBox.Add(fieldLabel)
+		fieldBox.Add(valueLabel)
+		fieldBox.Add(deleteBtn)
+
+		// Insert before the "Add Field" button
+		if len(fieldsContainer.Objects) > 0 {
+			fieldsContainer.Objects = append(fieldsContainer.Objects[:len(fieldsContainer.Objects)-1], fieldBox)
+			fieldsContainer.Objects = append(fieldsContainer.Objects, fieldsContainer.Objects[len(fieldsContainer.Objects)-1])
+			fieldsContainer.Objects[len(fieldsContainer.Objects)-2] = fieldBox
+		}
+		fieldsContainer.Refresh()
+	}, va.mainWindow)
+
 	d.Resize(fyne.NewSize(400, 250))
 	d.Show()
+}
+
+func (va *VaultApp) rebuildCustomFieldsUI(fields *[]pkg.EntryField, fieldsContainer *fyne.Container) {
+	// Keep only the "Add Field" button
+	addFieldBtn := fieldsContainer.Objects[0]
+	fieldsContainer.Objects = []fyne.CanvasObject{addFieldBtn}
+
+	// Rebuild all field displays
+	for i, field := range *fields {
+		fieldBox := container.NewHBox()
+		fieldLabel := widget.NewLabel(field.Name + ": ")
+		fieldLabel.TextStyle = fyne.TextStyle{Bold: true}
+
+		var valueLabel *widget.Label
+		if field.Type == pkg.FieldTypePassword || field.Type == pkg.FieldTypePIN {
+			valueLabel = widget.NewLabel(strings.Repeat("•", len(field.Value)))
+		} else {
+			valueLabel = widget.NewLabel(field.Value)
+		}
+
+		deleteBtn := widget.NewButtonWithIcon("", theme.DeleteIcon(), func(idx int) func() {
+			return func() {
+				*fields = append((*fields)[:idx], (*fields)[idx+1:]...)
+				va.rebuildCustomFieldsUI(fields, fieldsContainer)
+			}
+		}(i))
+
+		fieldBox.Add(fieldLabel)
+		fieldBox.Add(valueLabel)
+		fieldBox.Add(deleteBtn)
+
+		fieldsContainer.Objects = append(fieldsContainer.Objects[:len(fieldsContainer.Objects)-1], fieldBox, addFieldBtn)
+	}
+
+	fieldsContainer.Refresh()
 }
 
 func (va *VaultApp) showEditGroupDialog(group pkg.Group) {
@@ -794,60 +953,96 @@ func (va *VaultApp) showEditEntryDialog(entry pkg.Entry, groupPath pkg.Path) {
 	editedFields := make([]pkg.EntryField, len(entry.Fields))
 	copy(editedFields, entry.Fields)
 
-	for i, field := range editedFields {
-		idx := i
-		fieldNameEntry := widget.NewEntry()
-		fieldNameEntry.SetText(field.Name)
-		fieldNameEntry.OnChanged = func(s string) {
-			editedFields[idx].Name = s
-		}
+	// Store the original entry ID
+	originalEntryID := entry.ID
+	var rebuildFieldsUI func()
+	rebuildFieldsUI = func() {
+		fieldsContainer.Objects = nil
 
-		var fieldValueEntry *widget.Entry
-		if field.Type == pkg.FieldTypePassword || field.Type == pkg.FieldTypePIN {
-			fieldValueEntry = widget.NewPasswordEntry()
-		} else {
-			fieldValueEntry = widget.NewEntry()
-		}
-		fieldValueEntry.SetText(field.Value)
-		fieldValueEntry.OnChanged = func(s string) {
-			editedFields[idx].Value = s
-		}
+		for i, field := range editedFields {
+			idx := i
 
-		typeSelect := widget.NewSelect([]string{"General", "Password", "PIN"}, func(s string) {
-			switch s {
-			case "Password":
-				editedFields[idx].Type = pkg.FieldTypePassword
-			case "PIN":
-				editedFields[idx].Type = pkg.FieldTypePIN
+			fieldBox := container.NewVBox()
+
+			fieldNameLabel := widget.NewLabel("Field Name:")
+			fieldNameEntry := widget.NewEntry()
+			fieldNameEntry.SetText(field.Name)
+			fieldNameEntry.OnChanged = func(s string) {
+				editedFields[idx].Name = s
+			}
+
+			valueLabel := widget.NewLabel("Value:")
+			var fieldValueEntry *widget.Entry
+			if field.Type == pkg.FieldTypePassword {
+				fieldValueEntry = widget.NewPasswordEntry()
+			} else if field.Type == pkg.FieldTypePIN {
+				fieldValueEntry = widget.NewEntry()
+				fieldValueEntry.SetPlaceHolder("Numbers only")
+				fieldValueEntry.OnChanged = func(s string) {
+					filtered := ""
+					for _, r := range s {
+						if r >= '0' && r <= '9' {
+							filtered += string(r)
+						}
+					}
+					if filtered != s {
+						fieldValueEntry.SetText(filtered)
+					}
+					editedFields[idx].Value = filtered
+				}
+			} else {
+				fieldValueEntry = widget.NewEntry()
+				fieldValueEntry.OnChanged = func(s string) {
+					editedFields[idx].Value = s
+				}
+			}
+			fieldValueEntry.SetText(field.Value)
+
+			typeSelect := widget.NewSelect([]string{"General", "Password", "PIN"}, func(s string) {
+				switch s {
+				case "Password":
+					editedFields[idx].Type = pkg.FieldTypePassword
+				case "PIN":
+					editedFields[idx].Type = pkg.FieldTypePIN
+					if !pkg.IsNumeric(editedFields[idx].Value) {
+						editedFields[idx].Value = ""
+						fieldValueEntry.SetText("")
+					}
+				default:
+					editedFields[idx].Type = pkg.FieldTypeGeneral
+				}
+			})
+			switch field.Type {
+			case pkg.FieldTypePassword:
+				typeSelect.SetSelected("Password")
+			case pkg.FieldTypePIN:
+				typeSelect.SetSelected("PIN")
 			default:
-				editedFields[idx].Type = pkg.FieldTypeGeneral
+				typeSelect.SetSelected("General")
 			}
-		})
-		switch field.Type {
-		case pkg.FieldTypePassword:
-			typeSelect.SetSelected("Password")
-		case pkg.FieldTypePIN:
-			typeSelect.SetSelected("PIN")
-		default:
-			typeSelect.SetSelected("General")
+
+			deleteBtn := widget.NewButtonWithIcon("Delete Field", theme.DeleteIcon(), func(idx int) func() {
+				return func() {
+					editedFields = append(editedFields[:idx], editedFields[idx+1:]...)
+					rebuildFieldsUI()
+				}
+			}(idx))
+			deleteBtn.Importance = widget.DangerImportance
+
+			fieldBox.Add(fieldNameLabel)
+			fieldBox.Add(fieldNameEntry)
+			fieldBox.Add(valueLabel)
+			fieldBox.Add(fieldValueEntry)
+			fieldBox.Add(container.NewBorder(nil, nil, widget.NewLabel("Type:"), nil, typeSelect))
+			fieldBox.Add(deleteBtn)
+			fieldBox.Add(widget.NewSeparator())
+
+			fieldsContainer.Add(fieldBox)
 		}
-
-		deleteBtn := widget.NewButtonWithIcon("", theme.DeleteIcon(), func(idx int) func() {
-			return func() {
-				editedFields = append(editedFields[:idx], editedFields[idx+1:]...)
-				va.showEditEntryDialog(pkg.Entry{Title: titleEntry.Text, Fields: editedFields}, groupPath)
-			}
-		}(idx))
-
-		fieldsContainer.Add(container.NewVBox(
-			widget.NewLabel("Field Name:"),
-			fieldNameEntry,
-			widget.NewLabel("Value:"),
-			fieldValueEntry,
-			container.NewBorder(nil, nil, widget.NewLabel("Type:"), deleteBtn, typeSelect),
-			widget.NewSeparator(),
-		))
+		fieldsContainer.Refresh()
 	}
+
+	rebuildFieldsUI()
 
 	addFieldBtn := widget.NewButton("Add Field", func() {
 		editedFields = append(editedFields, pkg.EntryField{
@@ -855,7 +1050,7 @@ func (va *VaultApp) showEditEntryDialog(entry pkg.Entry, groupPath pkg.Path) {
 			Value: "",
 			Type:  pkg.FieldTypeGeneral,
 		})
-		va.showEditEntryDialog(pkg.Entry{Title: titleEntry.Text, Fields: editedFields}, groupPath)
+		rebuildFieldsUI()
 	})
 
 	scrollFields := container.NewScroll(fieldsContainer)
@@ -882,14 +1077,22 @@ func (va *VaultApp) showEditEntryDialog(entry pkg.Entry, groupPath pkg.Path) {
 			return
 		}
 
+		for _, field := range editedFields {
+			if field.Type == pkg.FieldTypePIN && !pkg.IsNumeric(field.Value) {
+				dialog.ShowError(fmt.Errorf("PIN field '%s' must contain only numbers", field.Name), va.mainWindow)
+				return
+			}
+		}
+
 		updatedEntry := pkg.Entry{
+			ID:     originalEntryID,
 			Title:  titleEntry.Text,
 			Fields: editedFields,
 		}
 
 		entryPath := pkg.Path{
 			GroupIDs: groupPath.GroupIDs,
-			EntryID:  entry.ID,
+			EntryID:  originalEntryID,
 		}
 
 		if err := va.service.UpdateEntry(entryPath, updatedEntry); err != nil {
@@ -904,6 +1107,7 @@ func (va *VaultApp) showEditEntryDialog(entry pkg.Entry, groupPath pkg.Path) {
 
 		dialog.ShowInformation("Success", "Entry updated successfully!", va.mainWindow)
 		va.refreshTree()
+		va.showEntryDetails(updatedEntry, groupPath)
 	}, va.mainWindow)
 
 	d.Resize(fyne.NewSize(500, 600))
@@ -970,7 +1174,10 @@ func (va *VaultApp) showSearchDialog() {
 	resultsList := widget.NewList(
 		func() int { return 0 },
 		func() fyne.CanvasObject {
-			return widget.NewLabel("Template")
+			return container.NewVBox(
+				widget.NewLabel("Template Title"),
+				widget.NewLabel("Path"),
+			)
 		},
 		func(i widget.ListItemID, o fyne.CanvasObject) {},
 	)
@@ -979,6 +1186,8 @@ func (va *VaultApp) showSearchDialog() {
 		entry pkg.Entry
 		path  pkg.Path
 	}
+
+	var currentDialog dialog.Dialog
 
 	searchEntry.OnChanged = func(s string) {
 		if s == "" {
@@ -1017,7 +1226,25 @@ func (va *VaultApp) showSearchDialog() {
 		resultsList.Length = func() int { return len(searchResults) }
 		resultsList.UpdateItem = func(id widget.ListItemID, obj fyne.CanvasObject) {
 			if id < len(searchResults) {
-				obj.(*widget.Label).SetText(searchResults[id].entry.Title)
+				c := obj.(*fyne.Container)
+				titleLabel := c.Objects[0].(*widget.Label)
+				pathLabel := c.Objects[1].(*widget.Label)
+
+				result := searchResults[id]
+				titleLabel.SetText(result.entry.Title)
+				titleLabel.TextStyle = fyne.TextStyle{Bold: true}
+
+				// Build path string
+				pathParts := []string{"ROOT"}
+				currentPath := pkg.Path{GroupIDs: []string{}}
+				for _, groupID := range result.path.GroupIDs {
+					currentPath.GroupIDs = append(currentPath.GroupIDs, groupID)
+					group, err := pkg.FindGroupByPath(va.service.GetWallet(), currentPath)
+					if err == nil {
+						pathParts = append(pathParts, group.Name)
+					}
+				}
+				pathLabel.SetText("📁 " + strings.Join(pathParts, " > "))
 			}
 		}
 		resultsList.Refresh()
@@ -1026,9 +1253,24 @@ func (va *VaultApp) showSearchDialog() {
 	resultsList.OnSelected = func(id widget.ListItemID) {
 		if id < len(searchResults) {
 			result := searchResults[id]
+
+			// Close the search dialog
+			if currentDialog != nil {
+				currentDialog.Hide()
+			}
+
+			// Navigate to the entry's parent group
 			va.currentPath = pkg.Path{GroupIDs: result.path.GroupIDs}
+
+			// Expand the tree to show the entry
+			va.expandTreeToPath(result.path.GroupIDs, result.entry.ID)
+
+			// Show entry details
 			va.showEntryDetails(result.entry, result.path)
-			va.refreshUI()
+
+			// Update UI
+			va.updateBreadcrumbs()
+			va.refreshTree()
 		}
 	}
 
@@ -1042,14 +1284,28 @@ func (va *VaultApp) showSearchDialog() {
 		resultsList,
 	)
 
-	d := dialog.NewCustom("Search", "Close", content, va.mainWindow)
-	d.Resize(fyne.NewSize(500, 400))
-	d.Show()
+	currentDialog = dialog.NewCustom("Search", "Close", content, va.mainWindow)
+	currentDialog.Resize(fyne.NewSize(600, 500))
+	currentDialog.Show()
 }
 
-func (va *VaultApp) performSearch(searchTerm string) {
-	// This is called from the main search bar
-	// You could implement inline search results here
+func (va *VaultApp) expandTreeToPath(groupIDs []string, entryID string) {
+	// Build the tree path and open each node
+	treePath := ""
+	for i, groupID := range groupIDs {
+		if i == 0 {
+			treePath = groupID
+		} else {
+			treePath = treePath + "|" + groupID
+		}
+		va.treeWidget.OpenBranch(treePath)
+	}
+
+	// Select the entry in the tree
+	if len(groupIDs) > 0 {
+		entryPath := strings.Join(groupIDs, "|") + "|E:" + entryID
+		va.treeWidget.Select(entryPath)
+	}
 }
 
 func (va *VaultApp) saveVault() {
@@ -1075,6 +1331,24 @@ func (va *VaultApp) lockVault() {
 func (va *VaultApp) navigateBack() {
 	if len(va.currentPath.GroupIDs) > 0 {
 		va.currentPath = pkg.GetParentPath(va.currentPath)
+
+		// Update tree selection to highlight current location
+		if len(va.currentPath.GroupIDs) == 0 {
+			// At root - unselect all
+			va.treeWidget.UnselectAll()
+			va.showGroupDetails(nil)
+		} else {
+			// Select the current group in the tree
+			treeID := strings.Join(va.currentPath.GroupIDs, "|")
+			va.treeWidget.Select(treeID)
+
+			// Show group details
+			group, err := pkg.FindGroupByPath(va.service.GetWallet(), va.currentPath)
+			if err == nil {
+				va.showGroupDetails(group)
+			}
+		}
+
 		va.refreshUI()
 	}
 }
